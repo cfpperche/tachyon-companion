@@ -4,81 +4,91 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Tachyon Companion</title>
-    <link rel="stylesheet" href="popup.css" />
+    <link rel="stylesheet" href="sidepanel.css" />
   </head>
   <body>
-    <header>
-      <h1>Tachyon Companion</h1>
-      <p class="sub">Pair · message active agents</p>
-    </header>
-
-    <section class="card">
-      <div id="badge" class="badge" data-status="disconnected">
-        <span class="dot" aria-hidden="true"></span>
-        <span id="status">disconnected</span>
-      </div>
-      <dl class="meta">
-        <div>
-          <dt>Engine</dt>
-          <dd id="engine">—</dd>
+    <div class="shell">
+      <header class="top">
+        <div class="brand">
+          <div class="logo" aria-hidden="true"></div>
+          <div>
+            <h1>Tachyon Companion</h1>
+            <p class="sub">Local engine · active agents</p>
+          </div>
         </div>
-        <div>
-          <dt>Base URL</dt>
-          <dd id="baseUrl">—</dd>
+        <div id="badge" class="badge" data-status="disconnected" title="Connection status">
+          <span class="dot" aria-hidden="true"></span>
+          <span id="status">disconnected</span>
         </div>
-        <div>
-          <dt>Protocol</dt>
-          <dd id="protocol">—</dd>
-        </div>
-        <div>
-          <dt>Extension</dt>
-          <dd id="version">—</dd>
-        </div>
-      </dl>
-      <p id="error" class="error" hidden></p>
-      <p id="info" class="info" hidden></p>
-    </section>
+      </header>
 
-    <section class="card" id="pair-form">
-      <h2>Pair</h2>
-      <label>
-        Base URL
-        <input id="inputBase" type="url" placeholder="http://127.0.0.1:41xxx" autocomplete="off" />
-      </label>
-      <label>
-        Pair code
-        <input id="inputCode" type="text" placeholder="XXXXXXXX" maxlength="16" autocomplete="off" spellcheck="false" />
-      </label>
-      <p class="hint">
-        VS Code: <strong>Tachyon: Pair Companion (show code)</strong>
-      </p>
-      <button type="button" id="pair">Pair</button>
-    </section>
+      <main class="content">
+        <section class="card meta-card">
+          <dl class="meta">
+            <div>
+              <dt>Engine</dt>
+              <dd id="engine">—</dd>
+            </div>
+            <div>
+              <dt>Base URL</dt>
+              <dd id="baseUrl" class="mono">—</dd>
+            </div>
+            <div>
+              <dt>Protocol</dt>
+              <dd id="protocol">—</dd>
+            </div>
+            <div>
+              <dt>Extension</dt>
+              <dd id="version">—</dd>
+            </div>
+          </dl>
+          <p id="error" class="error" hidden></p>
+          <p id="info" class="info" hidden></p>
+        </section>
 
-    <section class="card" id="prompt-form" hidden>
-      <h2>Message agent</h2>
-      <label>
-        Active agent
-        <select id="agentSelect">
-          <option value="">— refresh —</option>
-        </select>
-      </label>
-      <label>
-        Message
-        <textarea id="promptText" rows="3" maxlength="2000" placeholder="What should the agent do?"></textarea>
-      </label>
-      <p class="hint">If the agent is working, Tachyon queues until idle.</p>
-      <div class="row">
-        <button type="button" id="refreshAgents" class="ghost">Refresh list</button>
-        <button type="button" id="sendPrompt">Send</button>
-      </div>
-    </section>
+        <section class="card" id="pair-form">
+          <h2>Pair with engine</h2>
+          <label>
+            Base URL
+            <input id="inputBase" type="url" placeholder="http://127.0.0.1:41xxx" autocomplete="off" />
+          </label>
+          <label>
+            Pair code
+            <input id="inputCode" type="text" placeholder="XXXXXXXX" maxlength="16" autocomplete="off" spellcheck="false" />
+          </label>
+          <p class="hint">
+            In VS Code / Dev Host: command <strong>Tachyon: Pair Companion (show code)</strong> — pastes
+            <code>code=… baseUrl=…</code> to the clipboard.
+          </p>
+          <button type="button" id="pair" class="primary">Pair</button>
+        </section>
 
-    <footer class="actions">
-      <button type="button" id="refresh">Refresh</button>
-      <button type="button" id="reset" class="ghost">Unpair</button>
-    </footer>
+        <section class="card grow" id="prompt-form" hidden>
+          <h2>Message agent</h2>
+          <label>
+            Active agent
+            <select id="agentSelect">
+              <option value="">— refresh —</option>
+            </select>
+          </label>
+          <label class="grow-label">
+            Message
+            <textarea id="promptText" rows="6" maxlength="2000" placeholder="What should the agent do?"></textarea>
+          </label>
+          <p class="hint">If the agent is working, Tachyon queues until idle.</p>
+          <div class="row">
+            <button type="button" id="refreshAgents" class="ghost">Refresh list</button>
+            <button type="button" id="sendPrompt" class="primary">Send</button>
+          </div>
+        </section>
+      </main>
 
-    <script type="module" src="popup.js"></script>
+      <footer class="bottom">
+        <button type="button" id="refresh" class="ghost">Refresh status</button>
+        <button type="button" id="reset" class="ghost danger">Unpair</button>
+      </footer>
+    </div>
+
+    <script type="module" src="sidepanel.js"></script>
   </body>
 </html>
