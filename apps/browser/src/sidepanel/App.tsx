@@ -247,33 +247,52 @@ export function App() {
   }, [tab]);
 
   const refreshApprovals = async () => {
-    if (!connected) {
-      setApprovals([]);
-      return;
-    }
+    // Always hit the SW/engine when asked — do not gate on React `connected`
+    // (stale closure used to skip updates after SSE pushes).
     try {
       const res = await listApprovals();
-      if (res.ok) setApprovals(res.approvals);
-      else setApprovalsError(res.message ?? "Could not load approvals");
+      if (res.ok) {
+        setApprovals(res.approvals);
+        setApprovalsError(undefined);
+      } else if (res.code === "unpaired") {
+        setApprovals([]);
+      } else {
+        setApprovalsError(res.message ?? "Could not load approvals");
+      }
     } catch (e) {
       setApprovalsError(e instanceof Error ? e.message : String(e));
     }
   };
 
+  // Load + light poll while Approvals is open (SSE may lag or engine may miss push).
   useEffect(() => {
-    if (tab === "approvals") {
-      setApprovalsError(undefined);
-      void refreshApprovals();
-    }
+    if (tab !== "approvals" || !connected) return;
+    setApprovalsError(undefined);
+    void refreshApprovals();
+    const poll = setInterval(() => void refreshApprovals(), 2000);
+    return () => clearInterval(poll);
   }, [tab, connected]);
 
+  // Push path: SW gets SSE approvals.changed → storage tick + message.
   useEffect(() => {
     const onMsg = (message: { type?: string }) => {
       if (message?.type === "approvalsChanged") void refreshApprovals();
     };
+    const onStorage = (
+      changes: Record<string, chrome.storage.StorageChange>,
+      area: string,
+    ) => {
+      if (area === "local" && changes["tachyonCompanion.approvals.tick"]) {
+        void refreshApprovals();
+      }
+    };
     chrome.runtime.onMessage.addListener(onMsg);
-    return () => chrome.runtime.onMessage.removeListener(onMsg);
-  }, [connected]);
+    chrome.storage.onChanged.addListener(onStorage);
+    return () => {
+      chrome.runtime.onMessage.removeListener(onMsg);
+      chrome.storage.onChanged.removeListener(onStorage);
+    };
+  }, []);
 
   const onResolveApproval = async (id: string, decision: "approved" | "denied") => {
     setApprovalsBusy(true);

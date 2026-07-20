@@ -172,8 +172,21 @@ async function startLiveStream(): Promise<void> {
             console.error("tab.command fulfill failed", err);
           });
         } else if (ev.type === "approvals.changed") {
+          // Persist a tick so the side panel can react via storage.onChanged
+          // (sendMessage alone is easy to miss if the panel wasn't listening yet).
+          await chrome.storage.local.set({
+            "tachyonCompanion.approvals.tick": {
+              at: Date.now(),
+              id: ev.id,
+              decision: ev.decision,
+            },
+          });
           try {
-            await chrome.runtime.sendMessage({ type: "approvalsChanged", id: ev.id, decision: ev.decision });
+            await chrome.runtime.sendMessage({
+              type: "approvalsChanged",
+              id: ev.id,
+              decision: ev.decision,
+            });
           } catch {
             /* no side panel open */
           }
