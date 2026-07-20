@@ -6,6 +6,7 @@
  */
 
 import { runPageAction, type PageActRequest } from "./actions.js";
+import { installConsoleHook, readConsoleEntries } from "./consoleHook.js";
 
 const MSG_SNAPSHOT = "tachyon.tab.snapshot";
 const GUARD = "__tachyonCompanionContentV1";
@@ -215,11 +216,13 @@ function buildSnapshot(): TabSnapshotResult {
 }
 
 const MSG_ACT = "tachyon.tab.act";
+const MSG_CONSOLE = "tachyon.tab.console";
 
 // Idempotent inject: one listener per page.
 const g = globalThis as unknown as Record<string, unknown>;
 if (!g[GUARD]) {
   g[GUARD] = true;
+  installConsoleHook();
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === MSG_SNAPSHOT) {
       sendResponse(buildSnapshot());
@@ -229,8 +232,13 @@ if (!g[GUARD]) {
       sendResponse(runPageAction(message.action as PageActRequest));
       return true;
     }
+    if (message?.type === MSG_CONSOLE) {
+      const limit = typeof message.limit === "number" ? message.limit : 30;
+      sendResponse({ ok: true, entries: readConsoleEntries(limit) });
+      return true;
+    }
     return;
   });
 }
 
-export { MSG_SNAPSHOT, MSG_ACT };
+export { MSG_SNAPSHOT, MSG_ACT, MSG_CONSOLE };

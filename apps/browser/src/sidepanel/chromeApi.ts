@@ -98,6 +98,25 @@ export async function runTabAction(action: {
   return chrome.runtime.sendMessage({ type: "runTabAction", action });
 }
 
+export type TabScreenshotResponse =
+  | {
+      ok: true;
+      url: string;
+      title: string;
+      capturedAt: string;
+      dataUrl: string;
+      byteLength: number;
+      mimeType: string;
+    }
+  | { ok: false; code?: string; message: string; url?: string };
+
+export async function captureTabScreenshot(opts?: {
+  format?: "jpeg" | "png";
+  quality?: number;
+}): Promise<TabScreenshotResponse> {
+  return chrome.runtime.sendMessage({ type: "captureTabScreenshot", ...opts });
+}
+
 export type TrustPolicyView = {
   agentTabRead: "off" | "on";
   hostAccessGrantedAt?: string;

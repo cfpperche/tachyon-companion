@@ -17,6 +17,7 @@ import {
   type BadgeTone,
 } from "@tachyon-companion/browser-ui";
 import {
+  captureTabScreenshot,
   captureTabSnapshot,
   getActiveTabMeta,
   getLiveState,
@@ -93,6 +94,7 @@ export function App() {
     "Capture the active tab to build a DOM outline (read-only).",
   );
   const [snapshotMeta, setSnapshotMeta] = useState<string>("");
+  const [screenshotPreview, setScreenshotPreview] = useState<string>("");
   const [tabBusy, setTabBusy] = useState(false);
   const [tabError, setTabError] = useState<string | undefined>();
   const [fillSelector, setFillSelector] = useState("input[name=email]");
@@ -235,6 +237,26 @@ export function App() {
           (res.stats.truncated ? " · truncated" : "") +
           (res.selection ? ` · selection ${res.selection.length}c` : ""),
       );
+    } catch (e) {
+      setTabError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setTabBusy(false);
+    }
+  };
+
+  const onCaptureScreenshot = async () => {
+    setTabBusy(true);
+    setTabError(undefined);
+    try {
+      const res = await captureTabScreenshot({ format: "jpeg", quality: 70 });
+      if (!res.ok) {
+        setTabError(res.message ?? res.code ?? "Screenshot failed");
+        return;
+      }
+      setTabUrl(res.url);
+      setTabTitle(res.title);
+      setScreenshotPreview(res.dataUrl);
+      setInfo(`Screenshot ${(res.byteLength / 1024).toFixed(0)} KB · first-person tab view`);
     } catch (e) {
       setTabError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -536,15 +558,21 @@ export function App() {
 
           <Card
             title="Active tab"
-            hint="Read-only snapshot of the focused browser tab (no cookies)"
+            hint="First-person view of the focused browser tab (no cookies)"
             footer={
-              <Button
-                className="w-full"
-                disabled={tabBusy}
-                onClick={() => void onCaptureSnapshot()}
-              >
-                {tabBusy ? "Capturing…" : "Capture DOM snapshot"}
-              </Button>
+              <div className="flex w-full flex-col gap-2">
+                <Button className="w-full" disabled={tabBusy} onClick={() => void onCaptureScreenshot()}>
+                  {tabBusy ? "Capturing…" : "Capture screenshot"}
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="w-full"
+                  disabled={tabBusy}
+                  onClick={() => void onCaptureSnapshot()}
+                >
+                  Capture DOM outline
+                </Button>
+              </div>
             }
           >
             <dl className="m-0 mb-2 grid gap-2 text-[var(--tc-text-sm)]">
@@ -553,12 +581,19 @@ export function App() {
             </dl>
             <div className="flex flex-wrap gap-2">
               <Badge tone="success" dot>
-                read live
+                screenshot
               </Badge>
-              <Badge tone="working" dot>
-                actions later
+              <Badge tone="info" dot>
+                DOM · act · eval
               </Badge>
             </div>
+            {screenshotPreview ? (
+              <img
+                src={screenshotPreview}
+                alt="Active tab screenshot"
+                className="mt-2 max-h-48 w-full rounded-[var(--tc-radius-sm)] border border-[var(--tc-border)] object-contain object-top"
+              />
+            ) : null}
           </Card>
 
           <Card
@@ -647,9 +682,10 @@ export function App() {
             </div>
           </Card>
 
-          <Card title="Console" hint="Escalation — logs / MAIN world later (t-5c77bd)">
+          <Card title="Escalation" hint="Agent tools: user_browser_eval · user_browser_console">
             <p className="m-0 text-[var(--tc-text-xs)] text-[var(--tc-text-muted)]">
-              Capture page console and limited MAIN-world access when DOM alone is not enough.
+              MAIN-world eval and console capture are available to the paired agent when tab access is
+              on. Full CDP debugger remains a later escalation.
             </p>
           </Card>
         </TabsContent>

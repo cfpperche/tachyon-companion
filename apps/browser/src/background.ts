@@ -12,7 +12,13 @@ import {
   type CompanionTabResult,
   type ConnectionStatus,
 } from "@tachyon-companion/protocol";
-import { captureActiveTabSnapshot, runActiveTabAction } from "./tabBridge.js";
+import {
+  captureActiveTabScreenshot,
+  captureActiveTabSnapshot,
+  evalActiveTab,
+  readActiveTabConsole,
+  runActiveTabAction,
+} from "./tabBridge.js";
 import { readTrust } from "./trust.js";
 
 const STORAGE_KEY = "tachyonCompanion.v1";
@@ -254,6 +260,95 @@ async function fulfillTabCommand(client: CompanionClient, command: CompanionTabC
               : "unknown",
           message: snap.message,
           url: snap.url,
+        };
+    await client.postTabResult(body);
+    return;
+  }
+
+  if (command.kind === "screenshot") {
+    const shot = await captureActiveTabScreenshot({
+      format: command.format,
+      quality: command.quality,
+    });
+    const body: CompanionTabResult = shot.ok
+      ? {
+          ok: true,
+          id: command.id,
+          kind: "screenshot",
+          url: shot.url,
+          title: shot.title,
+          capturedAt: shot.capturedAt,
+          dataUrl: shot.dataUrl,
+          byteLength: shot.byteLength,
+          mimeType: shot.mimeType,
+        }
+      : {
+          ok: false,
+          id: command.id,
+          code:
+            shot.code === "restricted" ||
+            shot.code === "no_tab" ||
+            shot.code === "inject_failed" ||
+            shot.code === "unknown"
+              ? shot.code
+              : "unknown",
+          message: shot.message,
+          url: shot.url,
+        };
+    await client.postTabResult(body);
+    return;
+  }
+
+  if (command.kind === "eval") {
+    const ev = await evalActiveTab(command.expression);
+    const body: CompanionTabResult = ev.ok
+      ? {
+          ok: true,
+          id: command.id,
+          kind: "eval",
+          expression: ev.expression,
+          result: ev.result,
+          url: ev.url,
+        }
+      : {
+          ok: false,
+          id: command.id,
+          code:
+            ev.code === "restricted" ||
+            ev.code === "no_tab" ||
+            ev.code === "inject_failed" ||
+            ev.code === "unknown"
+              ? ev.code
+              : "unknown",
+          message: ev.message,
+          url: ev.url,
+        };
+    await client.postTabResult(body);
+    return;
+  }
+
+  if (command.kind === "console") {
+    const con = await readActiveTabConsole(command.limit ?? 30);
+    const body: CompanionTabResult = con.ok
+      ? {
+          ok: true,
+          id: command.id,
+          kind: "console",
+          url: con.url,
+          entries: con.entries,
+        }
+      : {
+          ok: false,
+          id: command.id,
+          code:
+            con.code === "restricted" ||
+            con.code === "no_tab" ||
+            con.code === "inject_failed" ||
+            con.code === "unknown"
+              ? con.code
+              : "unknown",
+          message: con.message,
+          url: con.url,
         };
     await client.postTabResult(body);
     return;
@@ -513,6 +608,24 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === "runTabAction") {
       try {
         sendResponse(await runActiveTabAction(message.action));
+      } catch (error) {
+        sendResponse({
+          ok: false,
+          code: "unknown",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (message?.type === "captureTabScreenshot") {
+      try {
+        sendResponse(
+          await captureActiveTabScreenshot({
+            format: message.format,
+            quality: message.quality,
+          }),
+        );
       } catch (error) {
         sendResponse({
           ok: false,

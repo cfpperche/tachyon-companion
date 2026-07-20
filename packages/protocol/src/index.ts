@@ -186,9 +186,12 @@ export interface CompanionLiveState {
 /** Engine → extension tab command (SSE event tab.command). */
 export type CompanionTabCommand =
   | { id: string; kind: "snapshot"; at: string; seq?: number }
+  | { id: string; kind: "screenshot"; at: string; format?: "jpeg" | "png"; quality?: number; seq?: number }
   | { id: string; kind: "click"; at: string; selector: string; seq?: number }
   | { id: string; kind: "type"; at: string; selector: string; text: string; submit?: boolean; seq?: number }
-  | { id: string; kind: "fill"; at: string; selector: string; value: string; seq?: number };
+  | { id: string; kind: "fill"; at: string; selector: string; value: string; seq?: number }
+  | { id: string; kind: "eval"; at: string; expression: string; seq?: number }
+  | { id: string; kind: "console"; at: string; limit?: number; seq?: number };
 
 export type CompanionTabErrorCode =
   | "timeout"
@@ -216,10 +219,36 @@ export type CompanionTabResult =
   | {
       ok: true;
       id: string;
+      kind: "screenshot";
+      url: string;
+      title: string;
+      capturedAt: string;
+      dataUrl: string;
+      byteLength: number;
+      mimeType: string;
+    }
+  | {
+      ok: true;
+      id: string;
       kind: "click" | "type" | "fill";
       selector: string;
       url?: string;
       detail?: string;
+    }
+  | {
+      ok: true;
+      id: string;
+      kind: "eval";
+      expression: string;
+      result: string;
+      url?: string;
+    }
+  | {
+      ok: true;
+      id: string;
+      kind: "console";
+      url?: string;
+      entries: Array<{ level: string; text: string; at?: string }>;
     }
   | {
       ok: false;
