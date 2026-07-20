@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
+import type { ComponentChildren } from "preact";
 import {
   AgentRow,
   Badge,
@@ -7,7 +8,6 @@ import {
   Field,
   Input,
   Select,
-  StatusHeader,
   Switch,
   Tabs,
   TabsContent,
@@ -233,85 +233,66 @@ export function App() {
     }
   };
 
-  const streamLabel =
+  const syncLabel =
     stream === "live"
       ? "live"
       : stream === "connecting" || stream === "reconnecting"
         ? stream
         : stream === "error"
           ? "sync error"
-          : undefined;
+          : stream === "idle"
+            ? connected
+              ? "starting…"
+              : "—"
+            : stream;
+
+  const panelPad = "flex flex-col gap-3 px-3.5 py-3";
 
   return (
     <div className="flex h-full min-h-screen flex-col bg-[var(--tc-bg)] text-[var(--tc-text)]">
-      <StatusHeader
-        title="Tachyon Companion"
-        subtitle={
-          streamLabel
-            ? `Local engine · ${streamLabel}`
-            : "Local engine · side panel"
-        }
-        statusLabel={conn.status}
-        statusTone={statusTone(conn.status)}
-      />
+      <Tabs value={tab} onValueChange={setTab}>
+        {/* —— LIVE: connection status + pair + message —— */}
+        <TabsContent value="live" className={panelPad}>
+          {(error || info) && (
+            <div className="space-y-1">
+              {error ? <p className="m-0 text-[var(--tc-text-sm)] text-[var(--tc-danger)]">{error}</p> : null}
+              {info ? <p className="m-0 text-[var(--tc-text-sm)] text-[var(--tc-success)]">{info}</p> : null}
+            </div>
+          )}
 
-      <div className="flex flex-1 flex-col gap-3 overflow-auto px-3.5 py-3">
-        {(error || info) && (
-          <div className="space-y-1">
-            {error ? <p className="m-0 text-[var(--tc-text-sm)] text-[var(--tc-danger)]">{error}</p> : null}
-            {info ? <p className="m-0 text-[var(--tc-text-sm)] text-[var(--tc-success)]">{info}</p> : null}
-          </div>
-        )}
-
-        <Tabs value={tab} onValueChange={setTab}>
-          <TabsList>
-            <TabsTrigger value="live">Live</TabsTrigger>
-            <TabsTrigger value="tab">Tab</TabsTrigger>
-            <TabsTrigger value="approvals">Approvals</TabsTrigger>
-            <TabsTrigger value="audit">Audit</TabsTrigger>
-            <TabsTrigger value="settings">Settings</TabsTrigger>
-          </TabsList>
-
-          {/* —— LIVE: pair + message (working today) —— */}
-          <TabsContent value="live" className="flex flex-col gap-3">
-            <Card
-              title="Connection"
-              hint={
-                stream === "live"
-                  ? "Live sync on"
-                  : stream === "connecting" || stream === "reconnecting"
-                    ? `Sync ${stream}…`
-                    : stream === "error"
-                      ? "Sync error — retrying"
-                      : undefined
-              }
-              footer={
-                connected ? (
-                  <Button variant="danger" className="w-full" disabled={busy} onClick={() => void onUnpair()}>
-                    Unpair
-                  </Button>
-                ) : undefined
-              }
-            >
-              <dl className="m-0 grid gap-2 text-[var(--tc-text-sm)]">
-                <Row k="Engine" v={conn.engine?.label ?? "—"} />
-                <Row k="Base URL" v={(conn.baseUrl ?? baseUrl) || "—"} mono />
-                <Row k="Protocol" v={String(conn.protocolVersion ?? "—")} />
-                <Row k="Extension" v={conn.extensionVersion ?? "—"} />
-                <Row
-                  k="Sync"
-                  v={
-                    stream === "live"
-                      ? "live"
-                      : stream === "idle"
-                        ? connected
-                          ? "starting…"
-                          : "—"
-                        : stream
-                  }
-                />
-              </dl>
-            </Card>
+          <Card
+            title="Connection"
+            hint={
+              stream === "live"
+                ? "Live sync on"
+                : stream === "connecting" || stream === "reconnecting"
+                  ? `Sync ${stream}…`
+                  : stream === "error"
+                    ? "Sync error — retrying"
+                    : undefined
+            }
+            footer={
+              connected ? (
+                <Button variant="danger" className="w-full" disabled={busy} onClick={() => void onUnpair()}>
+                  Unpair
+                </Button>
+              ) : undefined
+            }
+          >
+            <div className="mb-2.5 flex items-center justify-between gap-2">
+              <span className="text-[var(--tc-text-xs)] text-[var(--tc-text-muted)]">Status</span>
+              <Badge tone={statusTone(conn.status)} dot>
+                {conn.status}
+              </Badge>
+            </div>
+            <dl className="m-0 grid gap-2 text-[var(--tc-text-sm)]">
+              <Row k="Engine" v={conn.engine?.label ?? "—"} />
+              <Row k="Base URL" v={(conn.baseUrl ?? baseUrl) || "—"} mono />
+              <Row k="Protocol" v={String(conn.protocolVersion ?? "—")} />
+              <Row k="Extension" v={conn.extensionVersion ?? "—"} />
+              <Row k="Sync" v={syncLabel} />
+            </dl>
+          </Card>
 
             {!connected ? (
               <Card title="Pair with engine" hint="Command: Tachyon: Pair Companion (show code)">
@@ -377,8 +358,8 @@ export function App() {
             )}
           </TabsContent>
 
-          {/* —— TAB: product vision (read + act) —— */}
-          <TabsContent value="tab" className="flex flex-col gap-3">
+        {/* —— TAB: product vision (read + act) —— */}
+        <TabsContent value="tab" className={panelPad}>
             <Card
               title="Active tab"
               hint={protoMode ? "Prototype UI — control path not live yet" : "Tab tools"}
@@ -454,8 +435,8 @@ export function App() {
             </Card>
           </TabsContent>
 
-          {/* —— APPROVALS —— */}
-          <TabsContent value="approvals" className="flex flex-col gap-3">
+        {/* —— APPROVALS —— */}
+        <TabsContent value="approvals" className={panelPad}>
             <Card title="Pending approvals" hint="Host-authoritative Accept / Deny">
               <div className="flex flex-col gap-2">
                 {(protoMode ? PROTO_APPROVALS : []).map((a) => (
@@ -490,8 +471,8 @@ export function App() {
             </Card>
           </TabsContent>
 
-          {/* —— AUDIT —— */}
-          <TabsContent value="audit" className="flex flex-col gap-3">
+        {/* —— AUDIT —— */}
+        <TabsContent value="audit" className={panelPad}>
             <Card title="Activity" hint="What Companion did on this machine">
               <ul className="m-0 list-none space-y-2 p-0">
                 {(protoMode ? PROTO_AUDIT : [{ t: "—", kind: "info", text: "No events yet" }]).map((e, i) => (
@@ -512,8 +493,8 @@ export function App() {
             </Card>
           </TabsContent>
 
-          {/* —— SETTINGS —— */}
-          <TabsContent value="settings" className="flex flex-col gap-3">
+        {/* —— SETTINGS —— */}
+        <TabsContent value="settings" className={panelPad}>
             <Card title="Theme">
               <div className="flex flex-col gap-2">
                 {(["system", "light", "dark"] as Theme[]).map((t) => (
@@ -570,10 +551,27 @@ export function App() {
                 </Badge>
               </div>
             </Card>
-          </TabsContent>
-        </Tabs>
-      </div>
+        </TabsContent>
 
+        {/* Mobile bottom nav */}
+        <TabsList>
+          <TabsTrigger value="live" icon={<IconBolt />}>
+            Live
+          </TabsTrigger>
+          <TabsTrigger value="tab" icon={<IconWindow />}>
+            Tab
+          </TabsTrigger>
+          <TabsTrigger value="approvals" icon={<IconShield />}>
+            Approvals
+          </TabsTrigger>
+          <TabsTrigger value="audit" icon={<IconList />}>
+            Audit
+          </TabsTrigger>
+          <TabsTrigger value="settings" icon={<IconGear />}>
+            Settings
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
     </div>
   );
 }
@@ -584,5 +582,62 @@ function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
       <dt className="m-0 text-[var(--tc-text-muted)]">{k}</dt>
       <dd className={"m-0 truncate " + (mono ? "font-mono text-[11px]" : "font-medium")}>{v}</dd>
     </div>
+  );
+}
+
+function iconProps(children: ComponentChildren) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {children}
+    </svg>
+  );
+}
+
+function IconBolt() {
+  return iconProps(
+    <>
+      <path d="M13 2 3 14h8l-1 8 10-12h-8l1-8z" />
+    </>,
+  );
+}
+
+function IconWindow() {
+  return iconProps(
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M3 9h18" />
+    </>,
+  );
+}
+
+function IconShield() {
+  return iconProps(
+    <>
+      <path d="M12 3 4 7v5c0 5 3.5 8.5 8 9 4.5-.5 8-4 8-9V7l-8-4z" />
+    </>,
+  );
+}
+
+function IconList() {
+  return iconProps(
+    <>
+      <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
+    </>,
+  );
+}
+
+function IconGear() {
+  return iconProps(
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+    </>,
   );
 }
