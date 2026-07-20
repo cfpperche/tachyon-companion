@@ -112,9 +112,47 @@ input {
   font-weight: 600;
 }
 
-#pair-form button {
+#pair-form button,
+#prompt-form #sendPrompt {
   width: 100%;
   margin-top: 4px;
+}
+
+textarea,
+select {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--text) 15%, transparent);
+  background: transparent;
+  color: var(--text);
+  padding: 8px;
+  font: inherit;
+  resize: vertical;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.row button {
+  flex: 1;
+}
+
+.info {
+  margin: 8px 0 0;
+  color: var(--ok);
+  font-size: 11px;
+}
+
+#prompt-form h2 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 600;
 }
 
 .badge {

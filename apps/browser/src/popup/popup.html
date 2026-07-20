@@ -9,7 +9,7 @@
   <body>
     <header>
       <h1>Tachyon Companion</h1>
-      <p class="sub">Pair with a local Tachyon engine</p>
+      <p class="sub">Pair · message active agents</p>
     </header>
 
     <section class="card">
@@ -36,6 +36,7 @@
         </div>
       </dl>
       <p id="error" class="error" hidden></p>
+      <p id="info" class="info" hidden></p>
     </section>
 
     <section class="card" id="pair-form">
@@ -49,10 +50,28 @@
         <input id="inputCode" type="text" placeholder="XXXXXXXX" maxlength="16" autocomplete="off" spellcheck="false" />
       </label>
       <p class="hint">
-        In VS Code: command <strong>Tachyon: Pair Companion (show code)</strong> — pastes
-        <code>code=… baseUrl=…</code> to the clipboard.
+        VS Code: <strong>Tachyon: Pair Companion (show code)</strong>
       </p>
       <button type="button" id="pair">Pair</button>
+    </section>
+
+    <section class="card" id="prompt-form" hidden>
+      <h2>Message agent</h2>
+      <label>
+        Active agent
+        <select id="agentSelect">
+          <option value="">— refresh —</option>
+        </select>
+      </label>
+      <label>
+        Message
+        <textarea id="promptText" rows="3" maxlength="2000" placeholder="What should the agent do?"></textarea>
+      </label>
+      <p class="hint">If the agent is working, Tachyon queues until idle.</p>
+      <div class="row">
+        <button type="button" id="refreshAgents" class="ghost">Refresh list</button>
+        <button type="button" id="sendPrompt">Send</button>
+      </div>
     </section>
 
     <footer class="actions">

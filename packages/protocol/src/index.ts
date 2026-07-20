@@ -137,3 +137,35 @@ export interface ConnectionStatus {
 export function isProtocolCompatible(serverVersion: number, clientVersion: ProtocolVersion = COMPANION_PROTOCOL_VERSION): boolean {
   return serverVersion === clientVersion;
 }
+
+/** Running agent for send-prompt UI (MVP item 3 — evolving). */
+export interface CompanionAgentRow {
+  name: string;
+  attention: string;
+  composerOccupied: boolean;
+}
+
+export type ListAgentsResponse =
+  | { ok: true; agents: CompanionAgentRow[] }
+  | { ok: false; code: "unpaired" | "expired" | "unknown"; message: string };
+
+export type SendPromptResponse =
+  | {
+      ok: true;
+      status: "notified" | "queued";
+      agent: string;
+      dropped?: number;
+      queued?: number;
+    }
+  | {
+      ok: false;
+      code:
+        | "unpaired"
+        | "expired"
+        | "not_agent"
+        | "not_running"
+        | "not_ready"
+        | "empty"
+        | "unknown";
+      message: string;
+    };

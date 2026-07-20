@@ -1,5 +1,5 @@
 /**
- * Service worker — pairing + connection state (SDD 414 slice 2 client).
+ * Service worker — pairing + list agents + send prompt (SDD 414 MVP item 3).
  */
 
 import { CompanionClient } from "@tachyon-companion/api-client";
@@ -109,6 +109,44 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       }
       await writeState(defaultState());
       sendResponse({ ok: true });
+      return;
+    }
+
+    if (message?.type === "listAgents") {
+      const state = await readState();
+      if (!state.baseUrl || !state.sessionToken) {
+        sendResponse({ ok: false, code: "unpaired", message: "Not paired." });
+        return;
+      }
+      try {
+        sendResponse(await clientFrom(state).listAgents());
+      } catch (error) {
+        sendResponse({
+          ok: false,
+          code: "unknown",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (message?.type === "sendPrompt") {
+      const state = await readState();
+      if (!state.baseUrl || !state.sessionToken) {
+        sendResponse({ ok: false, code: "unpaired", message: "Not paired." });
+        return;
+      }
+      try {
+        sendResponse(
+          await clientFrom(state).sendPrompt(String(message.agent ?? ""), String(message.text ?? "")),
+        );
+      } catch (error) {
+        sendResponse({
+          ok: false,
+          code: "unknown",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
       return;
     }
 
