@@ -25,7 +25,7 @@ export function Tabs({
 }
 
 /**
- * Mobile bottom-nav tab list (equal columns, icon + label).
+ * Mobile bottom-nav tab list (equal columns, icon-only + title hint).
  * Place after TabsContent so it pins to the bottom of the flex column.
  */
 export function TabsList({ children, className }: { children?: ComponentChildren; className?: string }) {
@@ -47,18 +47,26 @@ export function TabsTrigger({
   value,
   children,
   icon,
+  hint,
 }: {
   value: string;
+  /** @deprecated Prefer `hint` — children used as tooltip when `hint` omitted. */
   children?: ComponentChildren;
-  /** Optional leading icon (shown above the label on mobile bottom nav). */
   icon?: ComponentChildren;
+  /** Tooltip / accessible name (native title + aria-label). */
+  hint?: string;
 }) {
+  const label =
+    hint ??
+    (typeof children === "string" || typeof children === "number" ? String(children) : undefined);
+
   return (
     <TabsPrimitive.Trigger
       value={value}
+      title={label}
+      aria-label={label}
       className={cn(
-        "flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-md px-1 py-1.5",
-        "text-[10px] font-semibold leading-tight tracking-wide",
+        "flex min-w-0 flex-1 flex-col items-center justify-center rounded-md px-1 py-2.5",
         "text-[var(--tc-text-muted)] transition-colors",
         "data-[state=active]:text-[var(--tc-accent)]",
         "focus-visible:outline-none focus-visible:shadow-[var(--tc-focus)]",
@@ -66,11 +74,12 @@ export function TabsTrigger({
       )}
     >
       {icon ? (
-        <span className="flex h-5 w-5 items-center justify-center opacity-90 [&_svg]:h-[18px] [&_svg]:w-[18px]" aria-hidden>
+        <span className="flex h-6 w-6 items-center justify-center opacity-90 [&_svg]:h-5 [&_svg]:w-5" aria-hidden>
           {icon}
         </span>
-      ) : null}
-      <span className="truncate">{children}</span>
+      ) : (
+        <span className="truncate text-[10px] font-semibold">{children}</span>
+      )}
     </TabsPrimitive.Trigger>
   );
 }

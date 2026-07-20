@@ -555,21 +555,11 @@ export function App() {
 
         {/* Mobile bottom nav */}
         <TabsList>
-          <TabsTrigger value="live" icon={<IconBolt />}>
-            Live
-          </TabsTrigger>
-          <TabsTrigger value="tab" icon={<IconWindow />}>
-            Tab
-          </TabsTrigger>
-          <TabsTrigger value="approvals" icon={<IconShield />}>
-            Approvals
-          </TabsTrigger>
-          <TabsTrigger value="audit" icon={<IconList />}>
-            Audit
-          </TabsTrigger>
-          <TabsTrigger value="settings" icon={<IconGear />}>
-            Settings
-          </TabsTrigger>
+          <TabsTrigger value="live" icon={<IconBolt />} hint="Live" />
+          <TabsTrigger value="tab" icon={<IconWindow />} hint="Tab" />
+          <TabsTrigger value="approvals" icon={<IconShield />} hint="Approvals" />
+          <TabsTrigger value="audit" icon={<IconList />} hint="Audit" />
+          <TabsTrigger value="settings" icon={<IconGear />} hint="Settings" />
         </TabsList>
       </Tabs>
     </div>
