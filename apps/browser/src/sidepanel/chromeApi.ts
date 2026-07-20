@@ -92,12 +92,45 @@ export async function getTrust(): Promise<{
   return chrome.runtime.sendMessage({ type: "getTrust" });
 }
 
+const AGENT_TAB_ORIGINS = ["http://*/*", "https://*/*"] as const;
+
+/**
+ * Enable/disable agent tab reads.
+ * Host permission MUST be requested from the side panel (user gesture) —
+ * chrome.permissions.request fails if called only from the service worker.
+ */
 export async function setTrust(agentTabRead: "off" | "on"): Promise<{
   ok: boolean;
   policy?: TrustPolicyView;
   hostAccess?: boolean;
   message?: string;
 }> {
+  if (agentTabRead === "on") {
+    try {
+      const already = await chrome.permissions.contains({ origins: [...AGENT_TAB_ORIGINS] });
+      if (!already) {
+        const granted = await chrome.permissions.request({ origins: [...AGENT_TAB_ORIGINS] });
+        if (!granted) {
+          return {
+            ok: false,
+            message:
+              "Host permission denied. Accept the Chrome permission dialog to allow agent tab reads on http(s) pages.",
+          };
+        }
+      }
+    } catch (e) {
+      return {
+        ok: false,
+        message: e instanceof Error ? e.message : "Could not request host permission.",
+      };
+    }
+  } else {
+    try {
+      await chrome.permissions.remove({ origins: [...AGENT_TAB_ORIGINS] });
+    } catch {
+      /* ignore */
+    }
+  }
   return chrome.runtime.sendMessage({ type: "setTrust", agentTabRead });
 }
 

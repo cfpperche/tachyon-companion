@@ -476,24 +476,25 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     }
 
     if (message?.type === "setTrust") {
-      const { readTrust, writeTrust, requestAgentHostAccess, removeAgentHostAccess } = await import("./trust.js");
+      // Host permission is requested in the side panel (user gesture). SW only persists policy.
+      const { writeTrust, hasAgentHostAccess } = await import("./trust.js");
       const agentTabRead = message.agentTabRead === "on" ? "on" : "off";
       if (agentTabRead === "on") {
-        const granted = await requestAgentHostAccess();
-        if (!granted) {
+        const hostAccess = await hasAgentHostAccess();
+        if (!hostAccess) {
           sendResponse({
             ok: false,
-            message: "Host permission denied. Agent tab reads need access to http(s) pages.",
+            message:
+              "Host permission not granted yet. Toggle again and accept the Chrome permission dialog.",
           });
           return;
         }
         await writeTrust({ agentTabRead: "on", hostAccessGrantedAt: new Date().toISOString() });
       } else {
-        await removeAgentHostAccess();
-        await writeTrust({ ...(await readTrust()), agentTabRead: "off" });
+        await writeTrust({ agentTabRead: "off", hostAccessGrantedAt: undefined });
       }
-      const policy = await readTrust();
-      const hostAccess = await (await import("./trust.js")).hasAgentHostAccess();
+      const policy = await (await import("./trust.js")).readTrust();
+      const hostAccess = await hasAgentHostAccess();
       sendResponse({ ok: true, policy, hostAccess });
       return;
     }
