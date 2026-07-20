@@ -131,7 +131,8 @@ export async function getTrust(): Promise<{
   return chrome.runtime.sendMessage({ type: "getTrust" });
 }
 
-const AGENT_TAB_ORIGINS = ["http://*/*", "https://*/*"] as const;
+/** Must match trust.ts — captureVisibleTab needs <all_urls>, not just http(s) patterns. */
+const AGENT_TAB_ORIGINS = ["<all_urls>"] as const;
 
 /**
  * Enable/disable agent tab reads.
@@ -166,7 +167,7 @@ export async function setTrust(agentTabRead: "off" | "on"): Promise<{
           return {
             ok: false,
             message:
-              "Host permission denied. Accept the Chrome permission dialog to allow agent tab reads on http(s) pages.",
+              "Host permission denied. Accept “Read and change all your data on all websites” so screenshots work (captureVisibleTab needs <all_urls>).",
           };
         }
       }

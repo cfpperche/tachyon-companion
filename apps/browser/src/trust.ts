@@ -34,8 +34,12 @@ export async function writeTrust(policy: TrustPolicy): Promise<void> {
   await chrome.storage.local.set({ [TRUST_KEY]: policy });
 }
 
-/** Origins needed for agent-initiated content-script inject (no user gesture). */
-export const AGENT_TAB_ORIGINS = ["http://*/*", "https://*/*"] as const;
+/**
+ * Host access for agent-initiated inject + captureVisibleTab.
+ * Chrome requires literally `<all_urls>` (or activeTab user-gesture) for
+ * tabs.captureVisibleTab — http(s) patterns alone are not enough for screenshots.
+ */
+export const AGENT_TAB_ORIGINS = ["<all_urls>"] as const;
 
 export async function hasAgentHostAccess(): Promise<boolean> {
   try {

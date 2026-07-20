@@ -858,11 +858,11 @@ export function App() {
                 <div>
                   <div className="text-[var(--tc-text-sm)] font-semibold">Allow agent tab reads</div>
                   <p className="m-0 text-[10px] text-[var(--tc-text-muted)]">
-                    When on, the paired engine may request a DOM outline of your active tab (no cookies; passwords
-                    redacted). Grants optional http/https host access for inject without a click each time.
+                    When on, the agent may read/act/screenshot your active tab (no cookies; passwords redacted).
+                    Chrome will ask for access on all sites — required for screenshots (`captureVisibleTab`).
                   </p>
                   <p className="m-0 mt-1 text-[10px] text-[var(--tc-text-muted)]">
-                    Host access: {hostAccess ? "granted" : "not granted"}
+                    Host access (&lt;all_urls&gt;): {hostAccess ? "granted" : "not granted"}
                   </p>
                 </div>
                 <Switch
