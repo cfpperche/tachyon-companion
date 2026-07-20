@@ -1,20 +1,34 @@
 #!/usr/bin/env node
 /**
- * Build unpacked Chromium extension into dist-unpacked/.
- * UI is a Chrome Side Panel (not action popup) — same surface class as Claude in Chrome.
+ * Build MV3 extension:
+ * - background.js (TS, no UI framework)
+ * - sidepanel.js (Preact + browser-ui + Radix via preact/compat)
+ * - sidepanel.css (Tailwind + design tokens)
  */
 import * as esbuild from "esbuild";
-import { copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
+import { spawnSync } from "node:child_process";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const appRoot = join(__dirname, "..");
+const repoRoot = join(appRoot, "../..");
 const outDir = join(appRoot, "dist-unpacked");
 
 rmSync(outDir, { recursive: true, force: true });
 mkdirSync(join(outDir, "icons"), { recursive: true });
+
+// Only remap React → preact/compat for Radix. Do NOT alias package root
+// `preact` to a single .js file — that breaks preact/hooks and preact/jsx-runtime.
+const preactCompat = join(repoRoot, "node_modules/preact/compat/dist/compat.module.js");
+const preactJsx = join(repoRoot, "node_modules/preact/jsx-runtime/dist/jsxRuntime.module.js");
+
+function resolveOrThrow(p, label) {
+  if (!existsSync(p)) throw new Error(`Missing ${label}: ${p} — run npm install from monorepo root`);
+  return p;
+}
 
 await esbuild.build({
   entryPoints: [join(appRoot, "src/background.ts")],
@@ -28,7 +42,7 @@ await esbuild.build({
 });
 
 await esbuild.build({
-  entryPoints: [join(appRoot, "src/sidepanel/sidepanel.ts")],
+  entryPoints: [join(appRoot, "src/sidepanel/main.tsx")],
   bundle: true,
   outfile: join(outDir, "sidepanel.js"),
   format: "esm",
@@ -36,19 +50,40 @@ await esbuild.build({
   target: ["chrome116"],
   sourcemap: true,
   logLevel: "info",
+  jsx: "automatic",
+  jsxImportSource: "preact",
+  alias: {
+    react: resolveOrThrow(preactCompat, "preact/compat"),
+    "react-dom": resolveOrThrow(preactCompat, "preact/compat"),
+    "react/jsx-runtime": resolveOrThrow(preactJsx, "preact/jsx-runtime"),
+  },
 });
+
+const tw = spawnSync(
+  process.platform === "win32" ? "npx.cmd" : "npx",
+  [
+    "tailwindcss",
+    "-c",
+    join(appRoot, "tailwind.config.js"),
+    "-i",
+    join(appRoot, "src/styles/input.css"),
+    "-o",
+    join(outDir, "sidepanel.css"),
+    "--minify",
+  ],
+  { cwd: appRoot, stdio: "inherit", shell: false },
+);
+if (tw.status !== 0) process.exit(tw.status ?? 1);
 
 copyFileSync(join(appRoot, "manifest.json"), join(outDir, "manifest.json"));
 copyFileSync(join(appRoot, "src/sidepanel/sidepanel.html"), join(outDir, "sidepanel.html"));
-copyFileSync(join(appRoot, "src/sidepanel/sidepanel.css"), join(outDir, "sidepanel.css"));
 
 for (const size of [16, 48, 128]) {
   writeFileSync(join(outDir, "icons", `icon${size}.png`), solidPng(size, [0x4c, 0x6e, 0xf5]));
 }
 
 console.log(`Unpacked extension → ${outDir}`);
-console.log("Chrome → Extensions → Load unpacked → select this folder.");
-console.log("Toolbar icon opens the Side Panel (not a popup).");
+console.log("Toolbar icon opens Side Panel (Preact + Tailwind + browser-ui).");
 
 function solidPng(size, rgb) {
   const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);

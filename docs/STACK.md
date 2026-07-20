@@ -36,8 +36,13 @@ packages/api-client/
 packages/browser-ui/          # design tokens + our components (Preact + Tailwind + Radix)
 ```
 
+## Design system (in progress)
+
+- Tokens: `packages/browser-ui/src/styles.css` (light / dark / system via `data-theme`)
+- Components: own Preact wrappers over Radix + Tailwind utility classes
+- Side panel prototype: tabs Live · Tab · Approvals · Audit · Settings (live pair/prompt + vision UI)
+
 ## Next
 
-1. Define **design system** (tokens, type, spacing, status colors, density for ~320–400px panel).
-2. Scaffold `packages/browser-ui` and migrate side panel off ad-hoc CSS.
-3. Continue product slices (tab control, etc.) on top of the DS.
+1. Harden browser-ui API from prototype dogfood
+2. Product slices (tab control, approvals live) on top of the DS

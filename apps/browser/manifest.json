@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Tachyon Companion",
-  "description": "Pair your browser with a local Tachyon engine — message active agents and handle approvals.",
-  "version": "0.1.1",
+  "description": "Pair your browser with a local Tachyon engine — message agents, tab tools, approvals.",
+  "version": "0.2.0",
   "action": {
     "default_title": "Open Tachyon Companion",
     "default_icon": {

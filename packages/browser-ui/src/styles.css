@@ -1,0 +1,99 @@
+/**
+ * Design tokens — Companion browser side panel
+ * Research-informed: narrow copilots (~320–400px), status-first header,
+ * sticky chrome, high-contrast dual theme (Linear / Raycast / AI side-panel patterns).
+ */
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+  --tc-bg: #f4f5f7;
+  --tc-bg-elevated: #ffffff;
+  --tc-bg-muted: #eef0f3;
+  --tc-border: rgba(26, 29, 36, 0.1);
+  --tc-text: #1a1d24;
+  --tc-text-muted: #5f6368;
+  --tc-text-inverse: #ffffff;
+  --tc-accent: #4c6ef5;
+  --tc-accent-hover: #3b5bdb;
+  --tc-accent-fg: #ffffff;
+  --tc-success: #0ca678;
+  --tc-success-muted: rgba(12, 166, 120, 0.12);
+  --tc-warning: #f59f00;
+  --tc-warning-muted: rgba(245, 159, 0, 0.14);
+  --tc-danger: #e03131;
+  --tc-danger-muted: rgba(224, 49, 49, 0.12);
+  --tc-info: #228be6;
+  --tc-info-muted: rgba(34, 139, 230, 0.12);
+  --tc-working: #7048e8;
+  --tc-working-muted: rgba(112, 72, 232, 0.12);
+  --tc-radius-sm: 8px;
+  --tc-radius-md: 12px;
+  --tc-radius-lg: 16px;
+  --tc-radius-pill: 999px;
+  --tc-space-1: 4px;
+  --tc-space-2: 8px;
+  --tc-space-3: 12px;
+  --tc-space-4: 16px;
+  --tc-space-5: 20px;
+  --tc-space-6: 24px;
+  --tc-font: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --tc-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --tc-text-xs: 11px;
+  --tc-text-sm: 12px;
+  --tc-text-md: 13px;
+  --tc-text-lg: 14px;
+  --tc-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --tc-focus: 0 0 0 2px color-mix(in srgb, var(--tc-accent) 45%, transparent);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --tc-bg: #0f1115;
+  --tc-bg-elevated: #1a1d24;
+  --tc-bg-muted: #12151b;
+  --tc-border: rgba(232, 234, 237, 0.12);
+  --tc-text: #e8eaed;
+  --tc-text-muted: #9aa0a6;
+  --tc-text-inverse: #0b1020;
+  --tc-accent: #7c9cff;
+  --tc-accent-hover: #9bb0ff;
+  --tc-accent-fg: #0b1020;
+  --tc-success: #3dd68c;
+  --tc-success-muted: rgba(61, 214, 140, 0.14);
+  --tc-warning: #f5a524;
+  --tc-warning-muted: rgba(245, 165, 36, 0.16);
+  --tc-danger: #f31260;
+  --tc-danger-muted: rgba(243, 18, 96, 0.14);
+  --tc-info: #66b3ff;
+  --tc-info-muted: rgba(102, 179, 255, 0.14);
+  --tc-working: #b197fc;
+  --tc-working-muted: rgba(177, 151, 252, 0.16);
+  --tc-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --tc-bg: #0f1115;
+    --tc-bg-elevated: #1a1d24;
+    --tc-bg-muted: #12151b;
+    --tc-border: rgba(232, 234, 237, 0.12);
+    --tc-text: #e8eaed;
+    --tc-text-muted: #9aa0a6;
+    --tc-text-inverse: #0b1020;
+    --tc-accent: #7c9cff;
+    --tc-accent-hover: #9bb0ff;
+    --tc-accent-fg: #0b1020;
+    --tc-success: #3dd68c;
+    --tc-success-muted: rgba(61, 214, 140, 0.14);
+    --tc-warning: #f5a524;
+    --tc-warning-muted: rgba(245, 165, 36, 0.16);
+    --tc-danger: #f31260;
+    --tc-danger-muted: rgba(243, 18, 96, 0.14);
+    --tc-info: #66b3ff;
+    --tc-info-muted: rgba(102, 179, 255, 0.14);
+    --tc-working: #b197fc;
+    --tc-working-muted: rgba(177, 151, 252, 0.16);
+    --tc-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  }
+}
