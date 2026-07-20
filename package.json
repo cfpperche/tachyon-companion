@@ -1,0 +1,29 @@
+{
+  "name": "tachyon-companion",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Tachyon Companion — external shells (browser + mobile) that pair with the Tachyon engine",
+  "license": "GPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cfpperche/tachyon-companion.git"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @tachyon-companion/protocol && npm run build -w @tachyon-companion/api-client && npm run build -w @tachyon-companion/browser",
+    "typecheck": "npm run build -w @tachyon-companion/protocol && npm run typecheck -w @tachyon-companion/protocol && npm run typecheck -w @tachyon-companion/api-client && npm run typecheck -w @tachyon-companion/browser",
+    "pack:browser": "npm run pack -w @tachyon-companion/browser",
+    "test": "npm run typecheck"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.0"
+  }
+}

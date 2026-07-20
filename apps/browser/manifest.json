@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Tachyon Companion",
+  "description": "Pair your browser with a local Tachyon engine — send tabs to the board and handle approvals.",
+  "version": "0.1.0",
+  "action": {
+    "default_title": "Tachyon Companion",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": ["activeTab", "storage"],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "minimum_chrome_version": "116"
+}

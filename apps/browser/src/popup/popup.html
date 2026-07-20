@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tachyon Companion</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Tachyon Companion</h1>
+      <p class="sub">Browser shell for a local Tachyon engine</p>
+    </header>
+
+    <section class="card">
+      <div id="badge" class="badge" data-status="disconnected">
+        <span class="dot" aria-hidden="true"></span>
+        <span id="status">disconnected</span>
+      </div>
+      <dl class="meta">
+        <div>
+          <dt>Engine</dt>
+          <dd id="engine">—</dd>
+        </div>
+        <div>
+          <dt>Protocol</dt>
+          <dd id="protocol">—</dd>
+        </div>
+        <div>
+          <dt>Extension</dt>
+          <dd id="version">—</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="card muted">
+      <h2>Coming with engine pairing</h2>
+      <ul>
+        <li>Pair with a short-lived code from Tachyon Control</li>
+        <li>Send active tab → board Task (URL + title)</li>
+        <li>List and resolve pending approvals</li>
+      </ul>
+      <p class="hint">
+        Scaffold only — ADE SDD 414 slices 2–4 wire the loopback API. This build does not contact any
+        network host until you pair.
+      </p>
+    </section>
+
+    <footer class="actions">
+      <button type="button" id="refresh">Refresh status</button>
+      <button type="button" id="reset" class="ghost">Clear local pair state</button>
+    </footer>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
