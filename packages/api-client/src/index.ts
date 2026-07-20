@@ -7,7 +7,7 @@ import {
   COMPANION_PROTOCOL_VERSION,
   type CompanionLiveState,
   type CompanionTabCommand,
-  type CompanionTabSnapshotResult,
+  type CompanionTabResult,
   type ConnectionStatus,
   type ListAgentsResponse,
   type ListApprovalsResponse,
@@ -177,7 +177,7 @@ export class CompanionClient {
   }
 
   /** Fulfill a tab.command from the engine (agent tool path). */
-  async postTabResult(body: CompanionTabSnapshotResult): Promise<{ ok: boolean; message?: string }> {
+  async postTabResult(body: CompanionTabResult): Promise<{ ok: boolean; message?: string }> {
     if (!this.baseUrl || !this.sessionToken) {
       return { ok: false, message: "Not paired." };
     }

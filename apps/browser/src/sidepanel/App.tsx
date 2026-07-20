@@ -22,6 +22,7 @@ import {
   getLiveState,
   getTrust,
   pair as pairApi,
+  runTabAction,
   sendPrompt,
   setTrust,
   subscribeLiveState,
@@ -519,26 +520,70 @@ export function App() {
             </Button>
           </Card>
 
-          <Card title="Page actions" hint="click · type · fill — not shipped yet (t-fbe280)">
-            <Field label="Selector / ref">
+          <Card
+            title="Page actions"
+            hint="Live content-script click · fill (agent tools: user_browser_click / fill / type)"
+          >
+            <Field label="Selector">
               <Input
                 value={fillSelector}
                 onInput={(e) => setFillSelector((e.target as HTMLInputElement).value)}
-                disabled
+                placeholder="button.submit, #email, …"
               />
             </Field>
-            <Field label="Value">
+            <Field label="Value (for fill)">
               <Input
                 value={fillValue}
                 onInput={(e) => setFillValue((e.target as HTMLInputElement).value)}
-                disabled
+                placeholder="text to fill"
               />
             </Field>
             <div className="flex gap-2">
-              <Button variant="secondary" className="flex-1" disabled>
+              <Button
+                variant="secondary"
+                className="flex-1"
+                disabled={tabBusy || !fillSelector.trim()}
+                onClick={() =>
+                  void (async () => {
+                    setTabBusy(true);
+                    setTabError(undefined);
+                    try {
+                      const res = await runTabAction({ kind: "click", selector: fillSelector.trim() });
+                      if (!res.ok) setTabError(res.message);
+                      else setInfo(res.detail ?? "Clicked.");
+                    } catch (e) {
+                      setTabError(e instanceof Error ? e.message : String(e));
+                    } finally {
+                      setTabBusy(false);
+                    }
+                  })()
+                }
+              >
                 Click
               </Button>
-              <Button className="flex-1" disabled>
+              <Button
+                className="flex-1"
+                disabled={tabBusy || !fillSelector.trim()}
+                onClick={() =>
+                  void (async () => {
+                    setTabBusy(true);
+                    setTabError(undefined);
+                    try {
+                      const res = await runTabAction({
+                        kind: "fill",
+                        selector: fillSelector.trim(),
+                        value: fillValue,
+                      });
+                      if (!res.ok) setTabError(res.message);
+                      else setInfo(res.detail ?? "Filled.");
+                    } catch (e) {
+                      setTabError(e instanceof Error ? e.message : String(e));
+                    } finally {
+                      setTabBusy(false);
+                    }
+                  })()
+                }
+              >
                 Fill
               </Button>
             </div>

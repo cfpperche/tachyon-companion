@@ -78,6 +78,20 @@ export async function captureTabSnapshot(): Promise<TabSnapshotResponse> {
   return chrome.runtime.sendMessage({ type: "captureTabSnapshot" });
 }
 
+export type TabActionResponse =
+  | { ok: true; kind: string; selector: string; detail?: string; url?: string }
+  | { ok: false; code?: string; message: string; url?: string };
+
+export async function runTabAction(action: {
+  kind: "click" | "type" | "fill";
+  selector: string;
+  text?: string;
+  value?: string;
+  submit?: boolean;
+}): Promise<TabActionResponse> {
+  return chrome.runtime.sendMessage({ type: "runTabAction", action });
+}
+
 export type TrustPolicyView = {
   agentTabRead: "off" | "on";
   hostAccessGrantedAt?: string;

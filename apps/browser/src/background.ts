@@ -9,10 +9,10 @@ import {
   COMPANION_PROTOCOL_VERSION,
   type CompanionAgentRow,
   type CompanionTabCommand,
-  type CompanionTabSnapshotResult,
+  type CompanionTabResult,
   type ConnectionStatus,
 } from "@tachyon-companion/protocol";
-import { captureActiveTabSnapshot } from "./tabBridge.js";
+import { captureActiveTabSnapshot, runActiveTabAction } from "./tabBridge.js";
 import { readTrust } from "./trust.js";
 
 const STORAGE_KEY = "tachyonCompanion.v1";
@@ -195,18 +195,8 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-/** Handle engine tab.command — trust-gated (t-e05d2d) + snapshot (t-2a7010). */
+/** Handle engine tab.command — trust-gated read/act (t-2a7010 + t-fbe280). */
 async function fulfillTabCommand(client: CompanionClient, command: CompanionTabCommand): Promise<void> {
-  if (command.kind !== "snapshot") {
-    await client.postTabResult({
-      ok: false,
-      id: command.id,
-      code: "unknown",
-      message: `Unsupported tab command kind: ${String((command as { kind?: string }).kind)}`,
-    });
-    return;
-  }
-
   const trust = await readTrust();
   if (trust.agentTabRead !== "on") {
     await client.postTabResult({
@@ -214,37 +204,90 @@ async function fulfillTabCommand(client: CompanionClient, command: CompanionTabC
       id: command.id,
       code: "denied",
       message:
-        "Agent tab reads are off. Enable them in Companion Settings (requires host access for http/https).",
+        "Agent tab access is off. Enable “Allow agent tab reads” in Companion Settings (host access for http/https).",
     });
     return;
   }
 
-  const snap = await captureActiveTabSnapshot();
-  const body: CompanionTabSnapshotResult = snap.ok
-    ? {
-        ok: true,
-        id: command.id,
-        url: snap.url,
-        title: snap.title,
-        capturedAt: snap.capturedAt,
-        selection: snap.selection,
-        outline: snap.outline,
-        stats: snap.stats,
-      }
-    : {
-        ok: false,
-        id: command.id,
-        code:
-          snap.code === "restricted" ||
-          snap.code === "no_tab" ||
-          snap.code === "inject_failed" ||
-          snap.code === "unknown"
-            ? snap.code
-            : "unknown",
-        message: snap.message,
-        url: snap.url,
-      };
-  await client.postTabResult(body);
+  if (command.kind === "snapshot") {
+    const snap = await captureActiveTabSnapshot();
+    const body: CompanionTabResult = snap.ok
+      ? {
+          ok: true,
+          id: command.id,
+          kind: "snapshot",
+          url: snap.url,
+          title: snap.title,
+          capturedAt: snap.capturedAt,
+          selection: snap.selection,
+          outline: snap.outline,
+          stats: snap.stats,
+        }
+      : {
+          ok: false,
+          id: command.id,
+          code:
+            snap.code === "restricted" ||
+            snap.code === "no_tab" ||
+            snap.code === "inject_failed" ||
+            snap.code === "unknown"
+              ? snap.code
+              : "unknown",
+          message: snap.message,
+          url: snap.url,
+        };
+    await client.postTabResult(body);
+    return;
+  }
+
+  if (command.kind === "click" || command.kind === "type" || command.kind === "fill") {
+    const action =
+      command.kind === "click"
+        ? { kind: "click" as const, selector: command.selector }
+        : command.kind === "type"
+          ? {
+              kind: "type" as const,
+              selector: command.selector,
+              text: command.text,
+              submit: command.submit,
+            }
+          : { kind: "fill" as const, selector: command.selector, value: command.value };
+
+    const act = await runActiveTabAction(action);
+    const body: CompanionTabResult = act.ok
+      ? {
+          ok: true,
+          id: command.id,
+          kind: act.kind,
+          selector: act.selector,
+          url: act.url,
+          detail: act.detail,
+        }
+      : {
+          ok: false,
+          id: command.id,
+          code:
+            act.code === "restricted" ||
+            act.code === "no_tab" ||
+            act.code === "inject_failed" ||
+            act.code === "not_found" ||
+            act.code === "denied" ||
+            act.code === "unknown"
+              ? act.code
+              : "unknown",
+          message: act.message,
+          url: "url" in act ? act.url : undefined,
+        };
+    await client.postTabResult(body);
+    return;
+  }
+
+  await client.postTabResult({
+    ok: false,
+    id: command.id,
+    code: "unknown",
+    message: `Unsupported tab command kind: ${String((command as { kind?: string }).kind)}`,
+  });
 }
 
 /**
@@ -434,10 +477,23 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return;
     }
 
-    // ─── Tab control (read-only foundation, t-88a17c) ────────────────────────
+    // ─── Tab control (read + act) ────────────────────────────────────────────
     if (message?.type === "captureTabSnapshot") {
       try {
         sendResponse(await captureActiveTabSnapshot());
+      } catch (error) {
+        sendResponse({
+          ok: false,
+          code: "unknown",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (message?.type === "runTabAction") {
+      try {
+        sendResponse(await runActiveTabAction(message.action));
       } catch (error) {
         sendResponse({
           ok: false,

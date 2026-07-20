@@ -1,9 +1,11 @@
 /**
- * Content-script entry — DOM read only (SDD 414 / t-88a17c).
- * Injected on demand via chrome.scripting (activeTab). No actuation.
+ * Content-script entry — DOM read + act (SDD 414).
+ * Injected on demand via chrome.scripting (activeTab / host permissions).
  *
- * Never captures cookies, passwords, or storage secrets.
+ * Never captures cookies; refuses password field fill/type.
  */
+
+import { runPageAction, type PageActRequest } from "./actions.js";
 
 const MSG_SNAPSHOT = "tachyon.tab.snapshot";
 const GUARD = "__tachyonCompanionContentV1";
@@ -212,15 +214,23 @@ function buildSnapshot(): TabSnapshotResult {
   }
 }
 
+const MSG_ACT = "tachyon.tab.act";
+
 // Idempotent inject: one listener per page.
 const g = globalThis as unknown as Record<string, unknown>;
 if (!g[GUARD]) {
   g[GUARD] = true;
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.type !== MSG_SNAPSHOT) return;
-    sendResponse(buildSnapshot());
-    return true;
+    if (message?.type === MSG_SNAPSHOT) {
+      sendResponse(buildSnapshot());
+      return true;
+    }
+    if (message?.type === MSG_ACT) {
+      sendResponse(runPageAction(message.action as PageActRequest));
+      return true;
+    }
+    return;
   });
 }
 
-export { MSG_SNAPSHOT };
+export { MSG_SNAPSHOT, MSG_ACT };

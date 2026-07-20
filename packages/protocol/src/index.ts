@@ -182,18 +182,28 @@ export interface CompanionLiveState {
 }
 
 /** Engine → extension tab command (SSE event tab.command). */
-export interface CompanionTabCommand {
-  id: string;
-  kind: "snapshot";
-  at: string;
-  seq?: number;
-}
+export type CompanionTabCommand =
+  | { id: string; kind: "snapshot"; at: string; seq?: number }
+  | { id: string; kind: "click"; at: string; selector: string; seq?: number }
+  | { id: string; kind: "type"; at: string; selector: string; text: string; submit?: boolean; seq?: number }
+  | { id: string; kind: "fill"; at: string; selector: string; value: string; seq?: number };
+
+export type CompanionTabErrorCode =
+  | "timeout"
+  | "offline"
+  | "denied"
+  | "restricted"
+  | "no_tab"
+  | "inject_failed"
+  | "not_found"
+  | "unknown";
 
 /** Extension → engine tab result (POST /companion/v1/tab/result). */
-export type CompanionTabSnapshotResult =
+export type CompanionTabResult =
   | {
       ok: true;
       id: string;
+      kind: "snapshot";
       url: string;
       title: string;
       capturedAt: string;
@@ -202,16 +212,20 @@ export type CompanionTabSnapshotResult =
       stats: { nodes: number; truncated: boolean; outlineChars: number };
     }
   | {
+      ok: true;
+      id: string;
+      kind: "click" | "type" | "fill";
+      selector: string;
+      url?: string;
+      detail?: string;
+    }
+  | {
       ok: false;
       id: string;
-      code:
-        | "timeout"
-        | "offline"
-        | "denied"
-        | "restricted"
-        | "no_tab"
-        | "inject_failed"
-        | "unknown";
+      code: CompanionTabErrorCode;
       message: string;
       url?: string;
     };
+
+/** @deprecated Use CompanionTabResult */
+export type CompanionTabSnapshotResult = CompanionTabResult;
