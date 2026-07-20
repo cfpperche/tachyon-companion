@@ -168,6 +168,32 @@ export function App() {
     return [];
   }, [agents, protoMode, connected]);
 
+  // While Agents is open, re-list from engine so new spawns appear without leaving the tab.
+  useEffect(() => {
+    if (tab !== "agents" || !connected) return;
+    let cancelled = false;
+    const pull = async () => {
+      try {
+        const { listAgents } = await import("./chromeApi.js");
+        const res = await listAgents();
+        if (cancelled || !res.ok || !res.agents) return;
+        setAgents(res.agents);
+        setSelectedAgent((prev) => {
+          if (prev && res.agents!.some((a) => a.name === prev)) return prev;
+          return res.agents![0]?.name ?? "";
+        });
+      } catch {
+        /* ignore poll errors */
+      }
+    };
+    void pull();
+    const id = setInterval(() => void pull(), 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [tab, connected]);
+
   const agentOptions = displayAgents.map((a) => ({
     value: a.name,
     label: `${a.name} · ${a.attention}${a.composerOccupied ? " · composer" : ""}`,

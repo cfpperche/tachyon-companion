@@ -493,18 +493,21 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     }
 
     if (message?.type === "listAgents") {
-      const live = await readLive();
-      if (live.stream === "live" || live.agents.length > 0) {
-        sendResponse({ ok: true, agents: live.agents });
-        return;
-      }
+      // Always re-fetch when paired so Agents tab stays fresh if SSE lags
+      // (e.g. agent started while the tab is open). Cache still updated for SSE consumers.
       const state = await readState();
       if (!state.baseUrl || !state.sessionToken) {
-        sendResponse({ ok: false, code: "unpaired", message: "Not paired." });
+        const live = await readLive();
+        sendResponse({ ok: true, agents: live.agents ?? [] });
         return;
       }
       try {
-        sendResponse(await clientFrom(state).listAgents());
+        const res = await clientFrom(state).listAgents();
+        if (res.ok && res.agents) {
+          const live = await readLive();
+          await writeLive({ ...live, agents: res.agents });
+        }
+        sendResponse(res);
       } catch (error) {
         sendResponse({
           ok: false,
