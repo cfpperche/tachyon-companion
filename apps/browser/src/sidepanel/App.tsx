@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useState } from "preact/hooks";
 import {
   AgentRow,
   Badge,
@@ -17,13 +17,14 @@ import {
   type BadgeTone,
 } from "@tachyon-companion/browser-ui";
 import {
-  getStatus,
-  listAgents,
+  getLiveState,
   pair as pairApi,
   sendPrompt,
+  subscribeLiveState,
   unpair as unpairApi,
   type AgentView,
   type ConnectionView,
+  type LiveView,
 } from "./chromeApi.js";
 
 type Theme = "system" | "light" | "dark";
@@ -48,9 +49,9 @@ function applyTheme(theme: Theme) {
 
 /** Prototype-only fixtures for “product complete” illustrations. */
 const PROTO_AGENTS: AgentView[] = [
-  { name: "grok", attention: "idle" },
+  { name: "grok", attention: "idle", composerOccupied: false },
   { name: "codex", attention: "working", composerOccupied: true },
-  { name: "claude", attention: "needs-input" },
+  { name: "claude", attention: "needs-input", composerOccupied: false },
 ];
 
 const PROTO_AUDIT = [
@@ -81,6 +82,7 @@ export function App() {
   const [protoMode, setProtoMode] = useState(true);
 
   const [conn, setConn] = useState<ConnectionView>({ status: "disconnected" });
+  const [stream, setStream] = useState<LiveView["stream"]>("idle");
   const [baseUrl, setBaseUrl] = useState("");
   const [pairCode, setPairCode] = useState("");
   const [agents, setAgents] = useState<AgentView[]>([]);
@@ -114,39 +116,46 @@ export function App() {
     applyTheme(t);
   };
 
-  const refresh = useCallback(async () => {
-    setError(undefined);
-    try {
-      const s = await getStatus();
-      setConn(s);
-      if (s.baseUrl && !baseUrl) setBaseUrl(s.baseUrl);
-      if (s.status === "connected") {
-        const a = await listAgents();
-        if (a.ok && a.agents) {
-          setAgents(a.agents);
-          if (!selectedAgent && a.agents[0]) setSelectedAgent(a.agents[0].name);
-        } else {
-          setAgents([]);
-        }
-      } else {
-        setAgents([]);
-      }
-      if (s.lastError) setError(s.lastError);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+  /** Apply SW live snapshot (SSE → storage/message). No manual refresh. */
+  const applyLive = (live: LiveView) => {
+    setConn(live.connection);
+    setStream(live.stream);
+    setAgents(live.agents);
+    if (live.connection.baseUrl) {
+      setBaseUrl((prev) => prev || live.connection.baseUrl || "");
     }
-  }, [baseUrl, selectedAgent]);
+    if (live.connection.lastError) setError(live.connection.lastError);
+    if (live.streamError && live.stream === "error") setError(live.streamError);
+    setSelectedAgent((prev) => {
+      if (prev && live.agents.some((a) => a.name === prev)) return prev;
+      return live.agents[0]?.name ?? "";
+    });
+  };
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    let cancelled = false;
+    void getLiveState()
+      .then((live) => {
+        if (!cancelled) applyLive(live);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      });
+    const unsub = subscribeLiveState((live) => {
+      if (!cancelled) applyLive(live);
+    });
+    return () => {
+      cancelled = true;
+      unsub();
+    };
+  }, []);
 
   const connected = conn.status === "connected";
   const displayAgents = useMemo(() => {
     if (agents.length > 0) return agents;
-    if (protoMode) return PROTO_AGENTS;
+    if (protoMode && !connected) return PROTO_AGENTS;
     return [];
-  }, [agents, protoMode]);
+  }, [agents, protoMode, connected]);
 
   const agentOptions = displayAgents.map((a) => ({
     value: a.name,
@@ -164,8 +173,8 @@ export function App() {
         return;
       }
       setPairCode("");
-      setInfo("Paired.");
-      await refresh();
+      setInfo("Paired — live sync connecting…");
+      // Live stream pushes connection + agents; no manual refresh.
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -180,7 +189,9 @@ export function App() {
     try {
       await unpairApi();
       setInfo("Unpaired.");
-      await refresh();
+      setAgents([]);
+      setConn({ status: "disconnected" });
+      setStream("idle");
     } finally {
       setBusy(false);
     }
@@ -208,7 +219,7 @@ export function App() {
       }
       setInfo(`OK → ${res.agent}: ${res.status === "queued" ? "queued until idle" : "sent now"}`);
       setMessage("");
-      await refresh();
+      // Attention / agent rows update via live stream.
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -216,11 +227,24 @@ export function App() {
     }
   };
 
+  const streamLabel =
+    stream === "live"
+      ? "live"
+      : stream === "connecting" || stream === "reconnecting"
+        ? stream
+        : stream === "error"
+          ? "sync error"
+          : undefined;
+
   return (
     <div className="flex h-full min-h-screen flex-col bg-[var(--tc-bg)] text-[var(--tc-text)]">
       <StatusHeader
         title="Tachyon Companion"
-        subtitle="Local engine · side panel"
+        subtitle={
+          streamLabel
+            ? `Local engine · ${streamLabel}`
+            : "Local engine · side panel"
+        }
         statusLabel={conn.status}
         statusTone={statusTone(conn.status)}
       />
@@ -278,16 +302,11 @@ export function App() {
             ) : (
               <Card
                 title="Message agent"
-                hint="Running agents only. Working → queued until idle."
+                hint="Running agents only. Working → queued until idle. List updates live."
                 footer={
-                  <>
-                    <Button variant="ghost" className="flex-1" disabled={busy} onClick={() => void refresh()}>
-                      Refresh
-                    </Button>
-                    <Button className="flex-1" disabled={busy} onClick={() => void onSend()}>
-                      Send
-                    </Button>
-                  </>
+                  <Button className="w-full" disabled={busy} onClick={() => void onSend()}>
+                    Send
+                  </Button>
                 }
               >
                 <Field label="Active agent">
@@ -526,15 +545,12 @@ export function App() {
       </div>
 
       <footer className="flex gap-2 border-t border-[var(--tc-border)] bg-[color-mix(in_srgb,var(--tc-bg-elevated)_80%,var(--tc-bg))] px-3.5 py-2.5">
-        <Button variant="ghost" className="flex-1" disabled={busy} onClick={() => void refresh()}>
-          Refresh
-        </Button>
         {connected ? (
-          <Button variant="danger" className="flex-1" disabled={busy} onClick={() => void onUnpair()}>
+          <Button variant="danger" className="w-full" disabled={busy} onClick={() => void onUnpair()}>
             Unpair
           </Button>
         ) : (
-          <Button variant="secondary" className="flex-1" onClick={() => setTab("settings")}>
+          <Button variant="secondary" className="w-full" onClick={() => setTab("settings")}>
             Theme
           </Button>
         )}

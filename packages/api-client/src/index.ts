@@ -5,6 +5,7 @@
 
 import {
   COMPANION_PROTOCOL_VERSION,
+  type CompanionLiveState,
   type ConnectionStatus,
   type ListAgentsResponse,
   type ListApprovalsResponse,
@@ -130,6 +131,46 @@ export class CompanionClient {
     return this.postJson<ResolveApprovalResponse>("/companion/v1/approvals/resolve", body);
   }
 
+  /**
+   * Open the live state SSE stream (GET /companion/v1/events).
+   * Uses fetch + stream (not EventSource) so Authorization bearer works.
+   * Yields parsed events until aborted or the connection ends.
+   */
+  async *liveEvents(signal?: AbortSignal): AsyncGenerator<
+    | { type: "snapshot"; state: CompanionLiveState }
+    | { type: "heartbeat"; seq: number; at: string }
+    | { type: "session"; reason: string; seq?: number; at?: string }
+  > {
+    if (!this.baseUrl || !this.sessionToken) {
+      throw new Error("Not paired — cannot open live stream.");
+    }
+    const res = await this.fetchImpl(this.url("/companion/v1/events"), {
+      method: "GET",
+      headers: {
+        accept: "text/event-stream",
+        authorization: `Bearer ${this.sessionToken}`,
+      },
+      signal,
+    });
+    if (!res.ok) {
+      throw new Error(`GET /companion/v1/events → ${res.status}`);
+    }
+    if (!res.body) {
+      throw new Error("Live stream response has no body.");
+    }
+    for await (const frame of parseSse(res.body)) {
+      if (frame.event === "snapshot") {
+        yield { type: "snapshot", state: JSON.parse(frame.data) as CompanionLiveState };
+      } else if (frame.event === "heartbeat") {
+        const body = JSON.parse(frame.data) as { seq: number; at: string };
+        yield { type: "heartbeat", seq: body.seq, at: body.at };
+      } else if (frame.event === "session") {
+        const body = JSON.parse(frame.data) as { reason: string; seq?: number; at?: string };
+        yield { type: "session", reason: body.reason, seq: body.seq, at: body.at };
+      }
+    }
+  }
+
   private async getJson<T>(path: string): Promise<T> {
     const res = await this.fetchImpl(this.url(path), {
       method: "GET",
@@ -169,3 +210,61 @@ export class CompanionClient {
 }
 
 export { COMPANION_PROTOCOL_VERSION };
+export type { CompanionLiveState };
+
+/** Minimal SSE parser for fetch ReadableStream bodies. */
+async function* parseSse(
+  body: ReadableStream<Uint8Array>,
+): AsyncGenerator<{ event: string; data: string }> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let event = "message";
+  let dataLines: string[] = [];
+
+  const flush = (): { event: string; data: string } | undefined => {
+    if (dataLines.length === 0) {
+      event = "message";
+      return undefined;
+    }
+    const frame = { event, data: dataLines.join("\n") };
+    event = "message";
+    dataLines = [];
+    return frame;
+  };
+
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nl: number;
+      while ((nl = buffer.indexOf("\n")) >= 0) {
+        let line = buffer.slice(0, nl);
+        buffer = buffer.slice(nl + 1);
+        if (line.endsWith("\r")) line = line.slice(0, -1);
+        if (line.startsWith(":")) continue; // comment / keep-alive
+        if (line.startsWith("event:")) {
+          event = line.slice(6).trim();
+          continue;
+        }
+        if (line.startsWith("data:")) {
+          dataLines.push(line.slice(5).replace(/^ /, ""));
+          continue;
+        }
+        if (line === "") {
+          const frame = flush();
+          if (frame) yield frame;
+        }
+      }
+    }
+    const tail = flush();
+    if (tail) yield tail;
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      /* ignore */
+    }
+  }
+}

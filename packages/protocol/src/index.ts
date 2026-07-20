@@ -169,3 +169,14 @@ export type SendPromptResponse =
         | "unknown";
       message: string;
     };
+
+/**
+ * Live state pushed on GET /companion/v1/events (SSE).
+ * Full snapshots — engine and client stay in lockstep without UI polling.
+ */
+export interface CompanionLiveState {
+  seq: number;
+  at: string;
+  connection: ConnectionStatus;
+  agents: CompanionAgentRow[];
+}
