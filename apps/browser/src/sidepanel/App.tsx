@@ -17,6 +17,8 @@ import {
   type BadgeTone,
 } from "@tachyon-companion/browser-ui";
 import {
+  captureTabSnapshot,
+  getActiveTabMeta,
   getLiveState,
   pair as pairApi,
   sendPrompt,
@@ -92,11 +94,15 @@ export function App() {
   const [info, setInfo] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
 
-  // Future-feature prototype local state (UI only)
-  const [tabUrl, setTabUrl] = useState("https://example.com/app");
+  // Tab control (read live; actions still prototype)
+  const [tabUrl, setTabUrl] = useState("");
+  const [tabTitle, setTabTitle] = useState("");
   const [snapshotPreview, setSnapshotPreview] = useState(
-    "html > body > main\n  h1 \"Checkout\"\n  form#pay\n    input[name=email]\n    button[type=submit] \"Pay\"",
+    "Capture the active tab to build a DOM outline (read-only).",
   );
+  const [snapshotMeta, setSnapshotMeta] = useState<string>("");
+  const [tabBusy, setTabBusy] = useState(false);
+  const [tabError, setTabError] = useState<string | undefined>();
   const [fillSelector, setFillSelector] = useState("input[name=email]");
   const [fillValue, setFillValue] = useState("user@example.com");
 
@@ -202,6 +208,46 @@ export function App() {
       setBusy(false);
     }
   };
+
+  const refreshActiveTabMeta = async () => {
+    try {
+      const m = await getActiveTabMeta();
+      if (m.ok) {
+        if (m.url) setTabUrl(m.url);
+        if (m.title) setTabTitle(m.title);
+      }
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const onCaptureSnapshot = async () => {
+    setTabBusy(true);
+    setTabError(undefined);
+    try {
+      const res = await captureTabSnapshot();
+      if (!res.ok) {
+        setTabError(res.message ?? res.code ?? "Snapshot failed");
+        return;
+      }
+      setTabUrl(res.url);
+      setTabTitle(res.title);
+      setSnapshotPreview(res.outline);
+      setSnapshotMeta(
+        `${res.stats.nodes} nodes · ${res.stats.outlineChars} chars` +
+          (res.stats.truncated ? " · truncated" : "") +
+          (res.selection ? ` · selection ${res.selection.length}c` : ""),
+      );
+    } catch (e) {
+      setTabError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setTabBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (tab === "tab") void refreshActiveTabMeta();
+  }, [tab]);
 
   const onSend = async () => {
     setBusy(true);
@@ -358,82 +404,87 @@ export function App() {
             )}
           </TabsContent>
 
-        {/* —— TAB: product vision (read + act) —— */}
+        {/* —— TAB: live DOM read + future actions —— */}
         <TabsContent value="tab" className={panelPad}>
-            <Card
-              title="Active tab"
-              hint={protoMode ? "Prototype UI — control path not live yet" : "Tab tools"}
-            >
-              <Field label="URL">
-                <Input value={tabUrl} onInput={(e) => setTabUrl((e.target as HTMLInputElement).value)} />
-              </Field>
-              <div className="mb-2 flex flex-wrap gap-2">
-                <Badge tone="info" dot>
-                  readable
-                </Badge>
-                <Badge tone="working" dot>
-                  actions planned
-                </Badge>
-              </div>
+          {tabError ? (
+            <p className="m-0 text-[var(--tc-text-sm)] text-[var(--tc-danger)]">{tabError}</p>
+          ) : null}
+
+          <Card
+            title="Active tab"
+            hint="Read-only snapshot of the focused browser tab (no cookies)"
+            footer={
               <Button
-                variant="secondary"
                 className="w-full"
-                onClick={() =>
-                  setInfo(protoMode ? "Prototype: would capture DOM snapshot of active tab." : "Snapshot requested.")
-                }
+                disabled={tabBusy}
+                onClick={() => void onCaptureSnapshot()}
               >
-                Capture DOM snapshot
+                {tabBusy ? "Capturing…" : "Capture DOM snapshot"}
               </Button>
-            </Card>
+            }
+          >
+            <dl className="m-0 mb-2 grid gap-2 text-[var(--tc-text-sm)]">
+              <Row k="Title" v={tabTitle || "—"} />
+              <Row k="URL" v={tabUrl || "—"} mono />
+            </dl>
+            <div className="flex flex-wrap gap-2">
+              <Badge tone="success" dot>
+                read live
+              </Badge>
+              <Badge tone="working" dot>
+                actions later
+              </Badge>
+            </div>
+          </Card>
 
-            <Card title="DOM snapshot" hint="Capped structured tree for the agent">
-              <pre className="m-0 max-h-40 overflow-auto rounded-[var(--tc-radius-sm)] bg-[var(--tc-bg-muted)] p-2 font-mono text-[10px] text-[var(--tc-text-muted)] whitespace-pre-wrap">
-                {snapshotPreview}
-              </pre>
-              <Button
-                variant="ghost"
-                className="mt-2 w-full"
-                onClick={() =>
-                  setSnapshotPreview((s) => s + "\n  /* refreshed */")
-                }
-              >
-                Refresh snapshot
+          <Card
+            title="DOM snapshot"
+            hint={snapshotMeta || "Capped outline for agents · passwords redacted"}
+          >
+            <pre className="m-0 max-h-56 overflow-auto rounded-[var(--tc-radius-sm)] bg-[var(--tc-bg-muted)] p-2 font-mono text-[10px] text-[var(--tc-text-muted)] whitespace-pre-wrap">
+              {snapshotPreview}
+            </pre>
+            <Button
+              variant="ghost"
+              className="mt-2 w-full"
+              disabled={tabBusy}
+              onClick={() => void onCaptureSnapshot()}
+            >
+              Refresh snapshot
+            </Button>
+          </Card>
+
+          <Card title="Page actions" hint="click · type · fill — not shipped yet (t-fbe280)">
+            <Field label="Selector / ref">
+              <Input
+                value={fillSelector}
+                onInput={(e) => setFillSelector((e.target as HTMLInputElement).value)}
+                disabled
+              />
+            </Field>
+            <Field label="Value">
+              <Input
+                value={fillValue}
+                onInput={(e) => setFillValue((e.target as HTMLInputElement).value)}
+                disabled
+              />
+            </Field>
+            <div className="flex gap-2">
+              <Button variant="secondary" className="flex-1" disabled>
+                Click
               </Button>
-            </Card>
-
-            <Card title="Page actions" hint="click · type · fill (content script)">
-              <Field label="Selector / ref">
-                <Input value={fillSelector} onInput={(e) => setFillSelector((e.target as HTMLInputElement).value)} />
-              </Field>
-              <Field label="Value">
-                <Input value={fillValue} onInput={(e) => setFillValue((e.target as HTMLInputElement).value)} />
-              </Field>
-              <div className="flex gap-2">
-                <Button
-                  variant="secondary"
-                  className="flex-1"
-                  onClick={() => setInfo(`Prototype: click ${fillSelector}`)}
-                >
-                  Click
-                </Button>
-                <Button
-                  className="flex-1"
-                  onClick={() => setInfo(`Prototype: fill ${fillSelector} = ${fillValue}`)}
-                >
-                  Fill
-                </Button>
-              </div>
-            </Card>
-
-            <Card title="Console" hint="Escalation — logs / MAIN world later">
-              <p className="m-0 mb-2 text-[var(--tc-text-xs)] text-[var(--tc-text-muted)]">
-                Capture page console and limited MAIN-world access when DOM alone is not enough.
-              </p>
-              <Button variant="ghost" className="w-full" onClick={() => setInfo("Prototype: console stream UI")}>
-                Show console stream
+              <Button className="flex-1" disabled>
+                Fill
               </Button>
-            </Card>
-          </TabsContent>
+            </div>
+          </Card>
+
+          <Card title="Console" hint="Escalation — logs / MAIN world later (t-5c77bd)">
+            <p className="m-0 text-[var(--tc-text-xs)] text-[var(--tc-text-muted)]">
+              Capture page console and limited MAIN-world access when DOM alone is not enough.
+            </p>
+          </Card>
+        </TabsContent>
 
         {/* —— APPROVALS —— */}
         <TabsContent value="approvals" className={panelPad}>

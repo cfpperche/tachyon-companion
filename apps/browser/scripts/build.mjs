@@ -41,6 +41,19 @@ await esbuild.build({
   logLevel: "info",
 });
 
+// Content script (vanilla TS) — DOM read only; injected via chrome.scripting.
+mkdirSync(join(outDir, "content"), { recursive: true });
+await esbuild.build({
+  entryPoints: [join(appRoot, "src/content/snapshot.ts")],
+  bundle: true,
+  outfile: join(outDir, "content/snapshot.js"),
+  format: "iife",
+  platform: "browser",
+  target: ["chrome116"],
+  sourcemap: true,
+  logLevel: "info",
+});
+
 await esbuild.build({
   entryPoints: [join(appRoot, "src/sidepanel/main.tsx")],
   bundle: true,

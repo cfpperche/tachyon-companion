@@ -45,6 +45,39 @@ export async function sendPrompt(
   return chrome.runtime.sendMessage({ type: "sendPrompt", agent, text });
 }
 
+/** Active tab meta (url/title) — may be empty without host permission until capture gesture. */
+export async function getActiveTabMeta(): Promise<{
+  ok: boolean;
+  tabId?: number;
+  url?: string;
+  title?: string;
+  message?: string;
+}> {
+  return chrome.runtime.sendMessage({ type: "getActiveTabMeta" });
+}
+
+/** DOM outline of the user's active tab (content-script, read-only). */
+export type TabSnapshotResponse =
+  | {
+      ok: true;
+      url: string;
+      title: string;
+      capturedAt: string;
+      selection?: string;
+      outline: string;
+      stats: { nodes: number; truncated: boolean; outlineChars: number };
+    }
+  | {
+      ok: false;
+      code?: string;
+      message: string;
+      url?: string;
+    };
+
+export async function captureTabSnapshot(): Promise<TabSnapshotResponse> {
+  return chrome.runtime.sendMessage({ type: "captureTabSnapshot" });
+}
+
 /** Subscribe to live state pushed by the service worker (SSE → storage/message). */
 export function subscribeLiveState(onState: (state: LiveView) => void): () => void {
   const onMessage = (message: { type?: string; state?: LiveView }) => {

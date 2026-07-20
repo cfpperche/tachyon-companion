@@ -1,6 +1,7 @@
 /**
- * Service worker — pairing + live state sync + send prompt (SDD 414).
+ * Service worker — pairing + live state sync + send prompt + tab bridge (SDD 414).
  * Owns the engine SSE connection; side panel only reads local state.
+ * Tab DOM read: host bridge → content script (t-88a17c).
  */
 
 import { CompanionClient } from "@tachyon-companion/api-client";
@@ -9,6 +10,7 @@ import {
   type CompanionAgentRow,
   type ConnectionStatus,
 } from "@tachyon-companion/protocol";
+import { captureActiveTabSnapshot } from "./tabBridge.js";
 
 const STORAGE_KEY = "tachyonCompanion.v1";
 const LIVE_KEY = "tachyonCompanion.live.v1";
@@ -366,6 +368,39 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         sendResponse({
           ok: false,
           code: "unknown",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    // ─── Tab control (read-only foundation, t-88a17c) ────────────────────────
+    if (message?.type === "captureTabSnapshot") {
+      try {
+        sendResponse(await captureActiveTabSnapshot());
+      } catch (error) {
+        sendResponse({
+          ok: false,
+          code: "unknown",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (message?.type === "getActiveTabMeta") {
+      try {
+        const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+        const t = tabs[0];
+        sendResponse({
+          ok: true,
+          tabId: t?.id,
+          url: t?.url,
+          title: t?.title,
+        });
+      } catch (error) {
+        sendResponse({
+          ok: false,
           message: error instanceof Error ? error.message : String(error),
         });
       }
