@@ -171,6 +171,12 @@ async function startLiveStream(): Promise<void> {
           void fulfillTabCommand(client, ev.command).catch((err) => {
             console.error("tab.command fulfill failed", err);
           });
+        } else if (ev.type === "approvals.changed") {
+          try {
+            await chrome.runtime.sendMessage({ type: "approvalsChanged", id: ev.id, decision: ev.decision });
+          } catch {
+            /* no side panel open */
+          }
         }
         // heartbeat: no-op (keeps SW fetch alive)
       }
@@ -517,6 +523,47 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       } catch (error) {
         sendResponse({
           ok: false,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (message?.type === "listApprovals") {
+      const state = await readState();
+      if (!state.baseUrl || !state.sessionToken) {
+        sendResponse({ ok: false, code: "unpaired", message: "Not paired." });
+        return;
+      }
+      try {
+        sendResponse(await clientFrom(state).listApprovals());
+      } catch (error) {
+        sendResponse({
+          ok: false,
+          code: "unknown",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (message?.type === "resolveApproval") {
+      const state = await readState();
+      if (!state.baseUrl || !state.sessionToken) {
+        sendResponse({ ok: false, code: "unpaired", message: "Not paired." });
+        return;
+      }
+      try {
+        sendResponse(
+          await clientFrom(state).resolveApproval({
+            id: String(message.id ?? ""),
+            decision: message.decision === "denied" ? "denied" : "approved",
+          }),
+        );
+      } catch (error) {
+        sendResponse({
+          ok: false,
+          code: "unknown",
           message: error instanceof Error ? error.message : String(error),
         });
       }

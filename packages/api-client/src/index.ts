@@ -143,6 +143,7 @@ export class CompanionClient {
     | { type: "heartbeat"; seq: number; at: string }
     | { type: "session"; reason: string; seq?: number; at?: string }
     | { type: "tab.command"; command: CompanionTabCommand }
+    | { type: "approvals.changed"; id?: string; decision?: string }
   > {
     if (!this.baseUrl || !this.sessionToken) {
       throw new Error("Not paired — cannot open live stream.");
@@ -172,6 +173,9 @@ export class CompanionClient {
         yield { type: "session", reason: body.reason, seq: body.seq, at: body.at };
       } else if (frame.event === "tab.command") {
         yield { type: "tab.command", command: JSON.parse(frame.data) as CompanionTabCommand };
+      } else if (frame.event === "approvals.changed") {
+        const body = JSON.parse(frame.data) as { id?: string; decision?: string };
+        yield { type: "approvals.changed", id: body.id, decision: body.decision };
       }
     }
   }

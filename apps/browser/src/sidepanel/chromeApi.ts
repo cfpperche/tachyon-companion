@@ -1,6 +1,12 @@
 /** Thin wrappers over extension messaging (live backend + live state). */
 
-import type { CompanionAgentRow, ConnectionStatus } from "@tachyon-companion/protocol";
+import type {
+  ApprovalSummary,
+  CompanionAgentRow,
+  ConnectionStatus,
+  ListApprovalsResponse,
+  ResolveApprovalResponse,
+} from "@tachyon-companion/protocol";
 
 export type ConnectionView = ConnectionStatus & {
   baseUrl?: string;
@@ -113,6 +119,19 @@ const AGENT_TAB_ORIGINS = ["http://*/*", "https://*/*"] as const;
  * Host permission MUST be requested from the side panel (user gesture) —
  * chrome.permissions.request fails if called only from the service worker.
  */
+export async function listApprovals(): Promise<ListApprovalsResponse> {
+  return chrome.runtime.sendMessage({ type: "listApprovals" });
+}
+
+export async function resolveApproval(
+  id: string,
+  decision: "approved" | "denied",
+): Promise<ResolveApprovalResponse> {
+  return chrome.runtime.sendMessage({ type: "resolveApproval", id, decision });
+}
+
+export type { ApprovalSummary };
+
 export async function setTrust(agentTabRead: "off" | "on"): Promise<{
   ok: boolean;
   policy?: TrustPolicyView;

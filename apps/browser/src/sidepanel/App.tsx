@@ -21,13 +21,16 @@ import {
   getActiveTabMeta,
   getLiveState,
   getTrust,
+  listApprovals,
   pair as pairApi,
+  resolveApproval,
   runTabAction,
   sendPrompt,
   setTrust,
   subscribeLiveState,
   unpair as unpairApi,
   type AgentView,
+  type ApprovalSummary,
   type ConnectionView,
   type LiveView,
 } from "./chromeApi.js";
@@ -66,20 +69,6 @@ const PROTO_AUDIT = [
   { t: "13:55", kind: "pair", text: "paired workspace @ 127.0.0.1:41179" },
 ];
 
-const PROTO_APPROVALS = [
-  {
-    id: "a-1",
-    title: "Allow write to src/bridge/tools.ts",
-    risk: "medium",
-    agent: "codex",
-  },
-  {
-    id: "a-2",
-    title: "Run npm run verify:full:quiet",
-    risk: "low",
-    agent: "grok",
-  },
-];
 
 export function App() {
   const [tab, setTab] = useState("live");
@@ -110,6 +99,9 @@ export function App() {
   const [fillValue, setFillValue] = useState("user@example.com");
   const [agentTabRead, setAgentTabRead] = useState(false);
   const [hostAccess, setHostAccess] = useState(false);
+  const [approvals, setApprovals] = useState<ApprovalSummary[]>([]);
+  const [approvalsBusy, setApprovalsBusy] = useState(false);
+  const [approvalsError, setApprovalsError] = useState<string | undefined>();
 
   useEffect(() => {
     const saved = localStorage.getItem(THEME_KEY) as Theme | null;
@@ -253,6 +245,53 @@ export function App() {
   useEffect(() => {
     if (tab === "tab") void refreshActiveTabMeta();
   }, [tab]);
+
+  const refreshApprovals = async () => {
+    if (!connected) {
+      setApprovals([]);
+      return;
+    }
+    try {
+      const res = await listApprovals();
+      if (res.ok) setApprovals(res.approvals);
+      else setApprovalsError(res.message ?? "Could not load approvals");
+    } catch (e) {
+      setApprovalsError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  useEffect(() => {
+    if (tab === "approvals") {
+      setApprovalsError(undefined);
+      void refreshApprovals();
+    }
+  }, [tab, connected]);
+
+  useEffect(() => {
+    const onMsg = (message: { type?: string }) => {
+      if (message?.type === "approvalsChanged") void refreshApprovals();
+    };
+    chrome.runtime.onMessage.addListener(onMsg);
+    return () => chrome.runtime.onMessage.removeListener(onMsg);
+  }, [connected]);
+
+  const onResolveApproval = async (id: string, decision: "approved" | "denied") => {
+    setApprovalsBusy(true);
+    setApprovalsError(undefined);
+    try {
+      const res = await resolveApproval(id, decision);
+      if (!res.ok) {
+        setApprovalsError(res.message ?? "Resolve failed");
+        return;
+      }
+      setInfo(`${decision === "approved" ? "Approved" : "Denied"} ${id}`);
+      await refreshApprovals();
+    } catch (e) {
+      setApprovalsError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setApprovalsBusy(false);
+    }
+  };
 
   useEffect(() => {
     void getTrust()
@@ -598,39 +637,88 @@ export function App() {
 
         {/* —— APPROVALS —— */}
         <TabsContent value="approvals" className={panelPad}>
-            <Card title="Pending approvals" hint="Host-authoritative Accept / Deny">
+          {approvalsError ? (
+            <p className="m-0 text-[var(--tc-text-sm)] text-[var(--tc-danger)]">{approvalsError}</p>
+          ) : null}
+          {(error || info) && tab === "approvals" ? (
+            <div className="space-y-1">
+              {error ? <p className="m-0 text-[var(--tc-text-sm)] text-[var(--tc-danger)]">{error}</p> : null}
+              {info ? <p className="m-0 text-[var(--tc-text-sm)] text-[var(--tc-success)]">{info}</p> : null}
+            </div>
+          ) : null}
+
+          {!connected ? (
+            <Card title="Approvals" hint="Pair on Live first">
+              <p className="m-0 text-[var(--tc-text-sm)] text-[var(--tc-text-muted)]">
+                Not connected. Open Live and pair to see pending human approvals from the engine.
+              </p>
+              <Button variant="secondary" className="mt-3 w-full" onClick={() => setTab("live")}>
+                Go to Live
+              </Button>
+            </Card>
+          ) : (
+            <Card
+              title="Pending approvals"
+              hint="Host-authoritative Accept / Deny · same ledger as Control"
+              footer={
+                <Button
+                  variant="ghost"
+                  className="w-full"
+                  disabled={approvalsBusy}
+                  onClick={() => void refreshApprovals()}
+                >
+                  Refresh
+                </Button>
+              }
+            >
               <div className="flex flex-col gap-2">
-                {(protoMode ? PROTO_APPROVALS : []).map((a) => (
+                {approvals.map((a) => (
                   <div
                     key={a.id}
                     className="rounded-[var(--tc-radius-sm)] border border-[var(--tc-border)] bg-[var(--tc-bg-muted)] p-2.5"
                   >
-                    <div className="text-[var(--tc-text-sm)] font-semibold text-[var(--tc-text)]">{a.title}</div>
+                    <div className="text-[var(--tc-text-sm)] font-semibold text-[var(--tc-text)]">{a.reason}</div>
                     <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--tc-text-muted)]">
-                      <span>{a.agent}</span>
-                      <Badge tone={a.risk === "medium" ? "warning" : "info"}>{a.risk}</Badge>
+                      <span className="font-mono">{a.id}</span>
+                      {a.requester ? <span>{a.requester}</span> : null}
+                      <Badge tone="warning">{a.risk}</Badge>
                     </div>
+                    <p className="m-0 mt-1.5 text-[var(--tc-text-xs)] text-[var(--tc-text-muted)]">
+                      Action: {a.proposedAction}
+                    </p>
+                    {a.exactPrompt ? (
+                      <pre className="m-0 mt-1.5 max-h-24 overflow-auto rounded-[var(--tc-radius-sm)] bg-[var(--tc-bg)] p-2 font-mono text-[10px] text-[var(--tc-text-muted)] whitespace-pre-wrap">
+                        {a.exactPrompt}
+                      </pre>
+                    ) : null}
                     <div className="mt-2 flex gap-2">
                       <Button
                         variant="secondary"
                         size="sm"
                         className="flex-1"
-                        onClick={() => setInfo(`Prototype: denied ${a.id}`)}
+                        disabled={approvalsBusy}
+                        onClick={() => void onResolveApproval(a.id, "denied")}
                       >
                         Deny
                       </Button>
-                      <Button size="sm" className="flex-1" onClick={() => setInfo(`Prototype: approved ${a.id}`)}>
+                      <Button
+                        size="sm"
+                        className="flex-1"
+                        disabled={approvalsBusy}
+                        onClick={() => void onResolveApproval(a.id, "approved")}
+                      >
                         Accept
                       </Button>
                     </div>
                   </div>
                 ))}
-                {!protoMode ? (
+                {approvals.length === 0 ? (
                   <p className="m-0 text-[var(--tc-text-xs)] text-[var(--tc-text-muted)]">No pending approvals.</p>
                 ) : null}
               </div>
             </Card>
-          </TabsContent>
+          )}
+        </TabsContent>
 
         {/* —— AUDIT —— */}
         <TabsContent value="audit" className={panelPad}>

@@ -85,9 +85,11 @@ export type SendCaptureResponse = SendCaptureSuccess | SendCaptureFailure;
 
 export interface ApprovalSummary {
   id: string;
+  requester?: string;
   reason: string;
   proposedAction: string;
   risk: string;
+  exactPrompt?: string;
   createdAt: string;
   status: "pending" | "approved" | "denied" | "cancelled";
 }
