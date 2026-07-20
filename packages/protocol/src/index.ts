@@ -130,6 +130,7 @@ export interface ConnectionStatus {
   /** ISO expiry of the companion session, if connected. */
   expiresAt?: string;
   lastError?: string;
+  protocolVersion?: number;
 }
 
 /** Assert client/server protocol compatibility (client-side helper). */

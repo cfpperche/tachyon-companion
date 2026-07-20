@@ -9,7 +9,7 @@
   <body>
     <header>
       <h1>Tachyon Companion</h1>
-      <p class="sub">Browser shell for a local Tachyon engine</p>
+      <p class="sub">Pair with a local Tachyon engine</p>
     </header>
 
     <section class="card">
@@ -23,6 +23,10 @@
           <dd id="engine">—</dd>
         </div>
         <div>
+          <dt>Base URL</dt>
+          <dd id="baseUrl">—</dd>
+        </div>
+        <div>
           <dt>Protocol</dt>
           <dd id="protocol">—</dd>
         </div>
@@ -31,24 +35,29 @@
           <dd id="version">—</dd>
         </div>
       </dl>
+      <p id="error" class="error" hidden></p>
     </section>
 
-    <section class="card muted">
-      <h2>Coming with engine pairing</h2>
-      <ul>
-        <li>Pair with a short-lived code from Tachyon Control</li>
-        <li>Send active tab → board Task (URL + title)</li>
-        <li>List and resolve pending approvals</li>
-      </ul>
+    <section class="card" id="pair-form">
+      <h2>Pair</h2>
+      <label>
+        Base URL
+        <input id="inputBase" type="url" placeholder="http://127.0.0.1:41xxx" autocomplete="off" />
+      </label>
+      <label>
+        Pair code
+        <input id="inputCode" type="text" placeholder="XXXXXXXX" maxlength="16" autocomplete="off" spellcheck="false" />
+      </label>
       <p class="hint">
-        Scaffold only — ADE SDD 414 slices 2–4 wire the loopback API. This build does not contact any
-        network host until you pair.
+        In VS Code: command <strong>Tachyon: Pair Companion (show code)</strong> — pastes
+        <code>code=… baseUrl=…</code> to the clipboard.
       </p>
+      <button type="button" id="pair">Pair</button>
     </section>
 
     <footer class="actions">
-      <button type="button" id="refresh">Refresh status</button>
-      <button type="button" id="reset" class="ghost">Clear local pair state</button>
+      <button type="button" id="refresh">Refresh</button>
+      <button type="button" id="reset" class="ghost">Unpair</button>
     </footer>
 
     <script type="module" src="popup.js"></script>
