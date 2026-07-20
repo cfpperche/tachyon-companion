@@ -124,8 +124,14 @@ export function App() {
     if (live.connection.baseUrl) {
       setBaseUrl((prev) => prev || live.connection.baseUrl || "");
     }
-    if (live.connection.lastError) setError(live.connection.lastError);
-    if (live.streamError && live.stream === "error") setError(live.streamError);
+    if (live.stream === "live") {
+      setError(undefined);
+      setInfo(undefined);
+    } else if (live.streamError && live.stream === "error") {
+      setError(live.streamError);
+    } else if (live.connection.lastError) {
+      setError(live.connection.lastError);
+    }
     setSelectedAgent((prev) => {
       if (prev && live.agents.some((a) => a.name === prev)) return prev;
       return live.agents[0]?.name ?? "";
@@ -173,7 +179,7 @@ export function App() {
         return;
       }
       setPairCode("");
-      setInfo("Paired — live sync connecting…");
+      setInfo(undefined);
       // Live stream pushes connection + agents; no manual refresh.
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -268,12 +274,42 @@ export function App() {
 
           {/* —— LIVE: pair + message (working today) —— */}
           <TabsContent value="live" className="flex flex-col gap-3">
-            <Card title="Connection">
+            <Card
+              title="Connection"
+              hint={
+                stream === "live"
+                  ? "Live sync on"
+                  : stream === "connecting" || stream === "reconnecting"
+                    ? `Sync ${stream}…`
+                    : stream === "error"
+                      ? "Sync error — retrying"
+                      : undefined
+              }
+              footer={
+                connected ? (
+                  <Button variant="danger" className="w-full" disabled={busy} onClick={() => void onUnpair()}>
+                    Unpair
+                  </Button>
+                ) : undefined
+              }
+            >
               <dl className="m-0 grid gap-2 text-[var(--tc-text-sm)]">
                 <Row k="Engine" v={conn.engine?.label ?? "—"} />
-                <Row k="Base URL" v={conn.baseUrl ?? "—"} mono />
+                <Row k="Base URL" v={(conn.baseUrl ?? baseUrl) || "—"} mono />
                 <Row k="Protocol" v={String(conn.protocolVersion ?? "—")} />
                 <Row k="Extension" v={conn.extensionVersion ?? "—"} />
+                <Row
+                  k="Sync"
+                  v={
+                    stream === "live"
+                      ? "live"
+                      : stream === "idle"
+                        ? connected
+                          ? "starting…"
+                          : "—"
+                        : stream
+                  }
+                />
               </dl>
             </Card>
 
@@ -339,12 +375,6 @@ export function App() {
                 </Field>
               </Card>
             )}
-
-            {connected ? (
-              <Button variant="danger" className="w-full" disabled={busy} onClick={() => void onUnpair()}>
-                Unpair
-              </Button>
-            ) : null}
           </TabsContent>
 
           {/* —— TAB: product vision (read + act) —— */}
@@ -544,17 +574,6 @@ export function App() {
         </Tabs>
       </div>
 
-      <footer className="flex gap-2 border-t border-[var(--tc-border)] bg-[color-mix(in_srgb,var(--tc-bg-elevated)_80%,var(--tc-bg))] px-3.5 py-2.5">
-        {connected ? (
-          <Button variant="danger" className="w-full" disabled={busy} onClick={() => void onUnpair()}>
-            Unpair
-          </Button>
-        ) : (
-          <Button variant="secondary" className="w-full" onClick={() => setTab("settings")}>
-            Theme
-          </Button>
-        )}
-      </footer>
     </div>
   );
 }

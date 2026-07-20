@@ -15,8 +15,8 @@
   "scripts": {
     "build": "npm run build -w @tachyon-companion/protocol && npm run build -w @tachyon-companion/api-client && npm run build -w @tachyon-companion/browser",
     "typecheck": "npm run build -w @tachyon-companion/protocol && npm run typecheck -w @tachyon-companion/protocol && npm run typecheck -w @tachyon-companion/api-client && npm run typecheck -w @tachyon-companion/browser-ui && npm run typecheck -w @tachyon-companion/browser",
-    "pack:browser": "npm run pack -w @tachyon-companion/browser",
-    "pack:chrome": "node scripts/pack-chrome.mjs",
+    "pack:browser": "npm run build -w @tachyon-companion/protocol && npm run build -w @tachyon-companion/api-client && npm run pack -w @tachyon-companion/browser",
+    "pack:chrome": "npm run build -w @tachyon-companion/protocol && npm run build -w @tachyon-companion/api-client && node scripts/pack-chrome.mjs",
     "install:chrome": "bash scripts/install-chrome.sh",
     "install:chrome:launch": "bash scripts/install-chrome.sh --launch",
     "test": "npm run typecheck"
