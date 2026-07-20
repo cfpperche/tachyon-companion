@@ -6,5 +6,7 @@ dist/
 .env
 .env.*
 apps/browser/dist-unpacked/
+dist/releases/
+dist/chrome-dogfood-profile/
 *.crx
 *.pem

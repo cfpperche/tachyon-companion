@@ -34,11 +34,26 @@ npm run build
 npm run typecheck
 ```
 
-### Load the browser extension (unpacked)
+### Install for Chrome (local package)
 
-1. `npm run pack:browser` — writes `apps/browser/dist-unpacked/`
-2. Chrome → Extensions → Developer mode → **Load unpacked** → select `apps/browser/dist-unpacked`
-3. Popup shows connection status (disconnected until engine pairing ships)
+```bash
+npm run pack:chrome
+# → dist/releases/tachyon-companion-browser-<version>.zip
+# → dist/releases/tachyon-companion-browser-<version>/   (Load unpacked)
+
+# One-shot helper (prints paths; optional Chrome launch with isolated profile):
+npm run install:chrome
+npm run install:chrome:launch   # opens Chrome with the extension preloaded
+```
+
+Manual:
+
+1. `npm run pack:chrome`
+2. Chrome → `chrome://extensions` → Developer mode → **Load unpacked**
+3. Select `dist/releases/tachyon-companion-browser-<version>/`
+4. Pair: in Tachyon (Dev Host), command **Tachyon: Pair Companion (show code)** → paste base URL + code in the popup
+
+Raw build only (no release zip): `npm run pack:browser` → `apps/browser/dist-unpacked/`
 
 ## Protocol
 
