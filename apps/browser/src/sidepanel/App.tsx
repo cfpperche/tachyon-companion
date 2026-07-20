@@ -20,8 +20,10 @@ import {
   captureTabSnapshot,
   getActiveTabMeta,
   getLiveState,
+  getTrust,
   pair as pairApi,
   sendPrompt,
+  setTrust,
   subscribeLiveState,
   unpair as unpairApi,
   type AgentView,
@@ -105,6 +107,8 @@ export function App() {
   const [tabError, setTabError] = useState<string | undefined>();
   const [fillSelector, setFillSelector] = useState("input[name=email]");
   const [fillValue, setFillValue] = useState("user@example.com");
+  const [agentTabRead, setAgentTabRead] = useState(false);
+  const [hostAccess, setHostAccess] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem(THEME_KEY) as Theme | null;
@@ -248,6 +252,42 @@ export function App() {
   useEffect(() => {
     if (tab === "tab") void refreshActiveTabMeta();
   }, [tab]);
+
+  useEffect(() => {
+    void getTrust()
+      .then((t) => {
+        if (t.ok && t.policy) {
+          setAgentTabRead(t.policy.agentTabRead === "on");
+          setHostAccess(!!t.hostAccess);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const onToggleAgentTabRead = async (on: boolean) => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const res = await setTrust(on ? "on" : "off");
+      if (!res.ok) {
+        setError(res.message ?? "Could not update trust");
+        setAgentTabRead(false);
+        return;
+      }
+      setAgentTabRead(res.policy?.agentTabRead === "on");
+      setHostAccess(!!res.hostAccess);
+      setInfo(
+        on
+          ? "Agent tab reads on — engine tools may request DOM snapshots."
+          : "Agent tab reads off.",
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setAgentTabRead(false);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const onSend = async () => {
     setBusy(true);
@@ -571,6 +611,13 @@ export function App() {
 
         {/* —— SETTINGS —— */}
         <TabsContent value="settings" className={panelPad}>
+          {(error || info) && tab === "settings" ? (
+            <div className="space-y-1">
+              {error ? <p className="m-0 text-[var(--tc-text-sm)] text-[var(--tc-danger)]">{error}</p> : null}
+              {info ? <p className="m-0 text-[var(--tc-text-sm)] text-[var(--tc-success)]">{info}</p> : null}
+            </div>
+          ) : null}
+
             <Card title="Theme">
               <div className="flex flex-col gap-2">
                 {(["system", "light", "dark"] as Theme[]).map((t) => (
@@ -589,6 +636,26 @@ export function App() {
                     {theme === t ? <Badge tone="info">active</Badge> : null}
                   </button>
                 ))}
+              </div>
+            </Card>
+
+            <Card title="Agent tab access" hint="Trust — t-e05d2d · enables user_browser_snapshot">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[var(--tc-text-sm)] font-semibold">Allow agent tab reads</div>
+                  <p className="m-0 text-[10px] text-[var(--tc-text-muted)]">
+                    When on, the paired engine may request a DOM outline of your active tab (no cookies; passwords
+                    redacted). Grants optional http/https host access for inject without a click each time.
+                  </p>
+                  <p className="m-0 mt-1 text-[10px] text-[var(--tc-text-muted)]">
+                    Host access: {hostAccess ? "granted" : "not granted"}
+                  </p>
+                </div>
+                <Switch
+                  checked={agentTabRead}
+                  disabled={busy}
+                  onCheckedChange={(v) => void onToggleAgentTabRead(v)}
+                />
               </div>
             </Card>
 

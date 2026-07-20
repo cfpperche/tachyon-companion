@@ -78,6 +78,29 @@ export async function captureTabSnapshot(): Promise<TabSnapshotResponse> {
   return chrome.runtime.sendMessage({ type: "captureTabSnapshot" });
 }
 
+export type TrustPolicyView = {
+  agentTabRead: "off" | "on";
+  hostAccessGrantedAt?: string;
+};
+
+export async function getTrust(): Promise<{
+  ok: boolean;
+  policy?: TrustPolicyView;
+  hostAccess?: boolean;
+  message?: string;
+}> {
+  return chrome.runtime.sendMessage({ type: "getTrust" });
+}
+
+export async function setTrust(agentTabRead: "off" | "on"): Promise<{
+  ok: boolean;
+  policy?: TrustPolicyView;
+  hostAccess?: boolean;
+  message?: string;
+}> {
+  return chrome.runtime.sendMessage({ type: "setTrust", agentTabRead });
+}
+
 /** Subscribe to live state pushed by the service worker (SSE → storage/message). */
 export function subscribeLiveState(onState: (state: LiveView) => void): () => void {
   const onMessage = (message: { type?: string; state?: LiveView }) => {

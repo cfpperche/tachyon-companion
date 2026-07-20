@@ -8,9 +8,12 @@ import { CompanionClient } from "@tachyon-companion/api-client";
 import {
   COMPANION_PROTOCOL_VERSION,
   type CompanionAgentRow,
+  type CompanionTabCommand,
+  type CompanionTabSnapshotResult,
   type ConnectionStatus,
 } from "@tachyon-companion/protocol";
 import { captureActiveTabSnapshot } from "./tabBridge.js";
+import { readTrust } from "./trust.js";
 
 const STORAGE_KEY = "tachyonCompanion.v1";
 const LIVE_KEY = "tachyonCompanion.live.v1";
@@ -163,6 +166,11 @@ async function startLiveStream(): Promise<void> {
             await writeState(defaultState());
             return;
           }
+        } else if (ev.type === "tab.command") {
+          // Agent tool user_browser_snapshot (or similar) — fulfill if trust allows.
+          void fulfillTabCommand(client, ev.command).catch((err) => {
+            console.error("tab.command fulfill failed", err);
+          });
         }
         // heartbeat: no-op (keeps SW fetch alive)
       }
@@ -185,6 +193,58 @@ async function startLiveStream(): Promise<void> {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/** Handle engine tab.command — trust-gated (t-e05d2d) + snapshot (t-2a7010). */
+async function fulfillTabCommand(client: CompanionClient, command: CompanionTabCommand): Promise<void> {
+  if (command.kind !== "snapshot") {
+    await client.postTabResult({
+      ok: false,
+      id: command.id,
+      code: "unknown",
+      message: `Unsupported tab command kind: ${String((command as { kind?: string }).kind)}`,
+    });
+    return;
+  }
+
+  const trust = await readTrust();
+  if (trust.agentTabRead !== "on") {
+    await client.postTabResult({
+      ok: false,
+      id: command.id,
+      code: "denied",
+      message:
+        "Agent tab reads are off. Enable them in Companion Settings (requires host access for http/https).",
+    });
+    return;
+  }
+
+  const snap = await captureActiveTabSnapshot();
+  const body: CompanionTabSnapshotResult = snap.ok
+    ? {
+        ok: true,
+        id: command.id,
+        url: snap.url,
+        title: snap.title,
+        capturedAt: snap.capturedAt,
+        selection: snap.selection,
+        outline: snap.outline,
+        stats: snap.stats,
+      }
+    : {
+        ok: false,
+        id: command.id,
+        code:
+          snap.code === "restricted" ||
+          snap.code === "no_tab" ||
+          snap.code === "inject_failed" ||
+          snap.code === "unknown"
+            ? snap.code
+            : "unknown",
+        message: snap.message,
+        url: snap.url,
+      };
+  await client.postTabResult(body);
 }
 
 /**
@@ -404,6 +464,37 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           message: error instanceof Error ? error.message : String(error),
         });
       }
+      return;
+    }
+
+    if (message?.type === "getTrust") {
+      const { readTrust, hasAgentHostAccess } = await import("./trust.js");
+      const policy = await readTrust();
+      const hostAccess = await hasAgentHostAccess();
+      sendResponse({ ok: true, policy, hostAccess });
+      return;
+    }
+
+    if (message?.type === "setTrust") {
+      const { readTrust, writeTrust, requestAgentHostAccess, removeAgentHostAccess } = await import("./trust.js");
+      const agentTabRead = message.agentTabRead === "on" ? "on" : "off";
+      if (agentTabRead === "on") {
+        const granted = await requestAgentHostAccess();
+        if (!granted) {
+          sendResponse({
+            ok: false,
+            message: "Host permission denied. Agent tab reads need access to http(s) pages.",
+          });
+          return;
+        }
+        await writeTrust({ agentTabRead: "on", hostAccessGrantedAt: new Date().toISOString() });
+      } else {
+        await removeAgentHostAccess();
+        await writeTrust({ ...(await readTrust()), agentTabRead: "off" });
+      }
+      const policy = await readTrust();
+      const hostAccess = await (await import("./trust.js")).hasAgentHostAccess();
+      sendResponse({ ok: true, policy, hostAccess });
       return;
     }
 

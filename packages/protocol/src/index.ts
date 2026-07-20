@@ -180,3 +180,38 @@ export interface CompanionLiveState {
   connection: ConnectionStatus;
   agents: CompanionAgentRow[];
 }
+
+/** Engine → extension tab command (SSE event tab.command). */
+export interface CompanionTabCommand {
+  id: string;
+  kind: "snapshot";
+  at: string;
+  seq?: number;
+}
+
+/** Extension → engine tab result (POST /companion/v1/tab/result). */
+export type CompanionTabSnapshotResult =
+  | {
+      ok: true;
+      id: string;
+      url: string;
+      title: string;
+      capturedAt: string;
+      selection?: string;
+      outline: string;
+      stats: { nodes: number; truncated: boolean; outlineChars: number };
+    }
+  | {
+      ok: false;
+      id: string;
+      code:
+        | "timeout"
+        | "offline"
+        | "denied"
+        | "restricted"
+        | "no_tab"
+        | "inject_failed"
+        | "unknown";
+      message: string;
+      url?: string;
+    };

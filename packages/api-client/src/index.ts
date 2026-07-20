@@ -6,6 +6,8 @@
 import {
   COMPANION_PROTOCOL_VERSION,
   type CompanionLiveState,
+  type CompanionTabCommand,
+  type CompanionTabSnapshotResult,
   type ConnectionStatus,
   type ListAgentsResponse,
   type ListApprovalsResponse,
@@ -140,6 +142,7 @@ export class CompanionClient {
     | { type: "snapshot"; state: CompanionLiveState }
     | { type: "heartbeat"; seq: number; at: string }
     | { type: "session"; reason: string; seq?: number; at?: string }
+    | { type: "tab.command"; command: CompanionTabCommand }
   > {
     if (!this.baseUrl || !this.sessionToken) {
       throw new Error("Not paired — cannot open live stream.");
@@ -167,8 +170,25 @@ export class CompanionClient {
       } else if (frame.event === "session") {
         const body = JSON.parse(frame.data) as { reason: string; seq?: number; at?: string };
         yield { type: "session", reason: body.reason, seq: body.seq, at: body.at };
+      } else if (frame.event === "tab.command") {
+        yield { type: "tab.command", command: JSON.parse(frame.data) as CompanionTabCommand };
       }
     }
+  }
+
+  /** Fulfill a tab.command from the engine (agent tool path). */
+  async postTabResult(body: CompanionTabSnapshotResult): Promise<{ ok: boolean; message?: string }> {
+    if (!this.baseUrl || !this.sessionToken) {
+      return { ok: false, message: "Not paired." };
+    }
+    return this.postJson("/companion/v1/tab/result", body);
+  }
+
+  async listPendingTabCommands(): Promise<{ ok: boolean; commands?: CompanionTabCommand[]; message?: string }> {
+    if (!this.baseUrl || !this.sessionToken) {
+      return { ok: false, message: "Not paired." };
+    }
+    return this.getJson("/companion/v1/tab/pending");
   }
 
   private async getJson<T>(path: string): Promise<T> {
