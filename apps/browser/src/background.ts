@@ -37,9 +37,28 @@ function clientFrom(state: StoredState): CompanionClient {
   });
 }
 
+/**
+ * Chrome Side Panel (same surface class as Claude in Chrome):
+ * toolbar icon opens a docked browser side panel, not a tiny action popup.
+ * @see https://developer.chrome.com/docs/extensions/reference/api/sidePanel
+ */
+function enableSidePanelOnActionClick(): void {
+  void chrome.sidePanel
+    .setPanelBehavior({ openPanelOnActionClick: true })
+    .catch((err: unknown) => console.error("sidePanel.setPanelBehavior failed", err));
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   void writeState(defaultState());
+  enableSidePanelOnActionClick();
 });
+
+chrome.runtime.onStartup.addListener(() => {
+  enableSidePanelOnActionClick();
+});
+
+// Service worker restarts: re-assert panel behavior.
+enableSidePanelOnActionClick();
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   void (async () => {

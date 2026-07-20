@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
  * Build unpacked Chromium extension into dist-unpacked/.
+ * UI is a Chrome Side Panel (not action popup) — same surface class as Claude in Chrome.
  */
 import * as esbuild from "esbuild";
 import { copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -27,9 +28,9 @@ await esbuild.build({
 });
 
 await esbuild.build({
-  entryPoints: [join(appRoot, "src/popup/popup.ts")],
+  entryPoints: [join(appRoot, "src/sidepanel/sidepanel.ts")],
   bundle: true,
-  outfile: join(outDir, "popup.js"),
+  outfile: join(outDir, "sidepanel.js"),
   format: "esm",
   platform: "browser",
   target: ["chrome116"],
@@ -38,26 +39,25 @@ await esbuild.build({
 });
 
 copyFileSync(join(appRoot, "manifest.json"), join(outDir, "manifest.json"));
-copyFileSync(join(appRoot, "src/popup/popup.html"), join(outDir, "popup.html"));
-copyFileSync(join(appRoot, "src/popup/popup.css"), join(outDir, "popup.css"));
+copyFileSync(join(appRoot, "src/sidepanel/sidepanel.html"), join(outDir, "sidepanel.html"));
+copyFileSync(join(appRoot, "src/sidepanel/sidepanel.css"), join(outDir, "sidepanel.css"));
 
-// Minimal valid PNGs (16/48/128) — solid indigo tile so store/unpacked has icons without binary assets in git.
 for (const size of [16, 48, 128]) {
   writeFileSync(join(outDir, "icons", `icon${size}.png`), solidPng(size, [0x4c, 0x6e, 0xf5]));
 }
 
 console.log(`Unpacked extension → ${outDir}`);
 console.log("Chrome → Extensions → Load unpacked → select this folder.");
+console.log("Toolbar icon opens the Side Panel (not a popup).");
 
-/** Tiny uncompressed RGB PNG. */
 function solidPng(size, rgb) {
   const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
   const ihdr = chunk("IHDR", (() => {
     const b = Buffer.alloc(13);
     b.writeUInt32BE(size, 0);
     b.writeUInt32BE(size, 4);
-    b[8] = 8; // bit depth
-    b[9] = 2; // RGB
+    b[8] = 8;
+    b[9] = 2;
     return b;
   })());
   const row = Buffer.alloc(1 + size * 3);

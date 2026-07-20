@@ -34,6 +34,13 @@ npm run build
 npm run typecheck
 ```
 
+### UI surface: Chrome Side Panel
+
+Toolbar icon opens a **browser side panel** (docked, same class as Claude in Chrome),
+not a tiny action popup. Implemented with the MV3
+[`chrome.sidePanel`](https://developer.chrome.com/docs/extensions/reference/api/sidePanel) API:
+`side_panel.default_path` + `sidePanel.setPanelBehavior({ openPanelOnActionClick: true })`.
+
 ### Install for Chrome (local package)
 
 ```bash
