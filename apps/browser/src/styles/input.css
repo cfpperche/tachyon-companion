@@ -13,9 +13,18 @@ body,
 }
 
 body {
+  /* Same default as shell design-system body / sidebar: Tachyon Mono UI. */
   font-family: var(--tc-font);
   font-size: var(--tc-text-md);
+  font-weight: var(--tc-weight-regular, 400);
   background: var(--tc-bg);
   color: var(--tc-text);
   -webkit-font-smoothing: antialiased;
+  font-feature-settings: "liga" 1, "calt" 1;
+}
+
+/* Long-form / prose surfaces (shell --tachyon-font-reading role). */
+.tc-reading {
+  font-family: var(--tc-font-reading);
+  line-height: 1.55;
 }

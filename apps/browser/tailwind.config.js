@@ -7,8 +7,10 @@ export default {
   theme: {
     extend: {
       fontFamily: {
+        // Shell maps both sans + mono UI to Tachyon Mono; reading is separate.
         sans: ["var(--tc-font)"],
         mono: ["var(--tc-font-mono)"],
+        reading: ["var(--tc-font-reading)"],
       },
     },
   },

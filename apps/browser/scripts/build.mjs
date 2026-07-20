@@ -6,7 +6,7 @@
  * - sidepanel.css (Tailwind + design tokens)
  */
 import * as esbuild from "esbuild";
-import { copyFileSync, mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { copyFileSync, cpSync, mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
@@ -77,6 +77,15 @@ if (tw.status !== 0) process.exit(tw.status ?? 1);
 
 copyFileSync(join(appRoot, "manifest.json"), join(outDir, "manifest.json"));
 copyFileSync(join(appRoot, "src/sidepanel/sidepanel.html"), join(outDir, "sidepanel.html"));
+
+// Tachyon Mono (JetBrains Mono) — same assets as shell webviews.
+const fontsSrc = join(repoRoot, "packages/browser-ui/fonts/tachyon");
+const fontsDst = join(outDir, "fonts/tachyon");
+if (!existsSync(fontsSrc)) {
+  throw new Error(`Missing Tachyon Mono fonts at ${fontsSrc}`);
+}
+mkdirSync(fontsDst, { recursive: true });
+cpSync(fontsSrc, fontsDst, { recursive: true });
 
 for (const size of [16, 48, 128]) {
   writeFileSync(join(outDir, "icons", `icon${size}.png`), solidPng(size, [0x4c, 0x6e, 0xf5]));

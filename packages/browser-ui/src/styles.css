@@ -2,7 +2,43 @@
  * Design tokens — Companion browser side panel
  * Research-informed: narrow copilots (~320–400px), status-first header,
  * sticky chrome, high-contrast dual theme (Linear / Raycast / AI side-panel patterns).
+ *
+ * Typography matches Tachyon shell webviews (sidebar / design-system.css):
+ * UI chrome uses bundled "Tachyon Mono" (JetBrains Mono); long-form reading
+ * uses the system UI sans stack (shell --tachyon-font-reading role).
  */
+
+/* Same faces as tachyon src/webview/shared/design-system.css — paths relative to
+ * packed sidepanel.css (dist-unpacked/sidepanel.css → fonts/tachyon/*). */
+@font-face {
+  font-family: "Tachyon Mono";
+  src: url("fonts/tachyon/JetBrainsMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Tachyon Mono";
+  src: url("fonts/tachyon/JetBrainsMono-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Tachyon Mono";
+  src: url("fonts/tachyon/JetBrainsMono-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Tachyon Mono";
+  src: url("fonts/tachyon/JetBrainsMono-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root,
 [data-theme="light"] {
   color-scheme: light;
@@ -36,8 +72,14 @@
   --tc-space-4: 16px;
   --tc-space-5: 20px;
   --tc-space-6: 24px;
-  --tc-font: "Segoe UI", system-ui, -apple-system, sans-serif;
-  --tc-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* Shell parity: UI default is Tachyon Mono (sidebar body); reading is system sans. */
+  --tc-font-mono: "Tachyon Mono", ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --tc-font: var(--tc-font-mono);
+  --tc-font-reading: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --tc-weight-regular: 400;
+  --tc-weight-medium: 500;
+  --tc-weight-semibold: 600;
+  --tc-weight-bold: 700;
   --tc-text-xs: 11px;
   --tc-text-sm: 12px;
   --tc-text-md: 13px;
