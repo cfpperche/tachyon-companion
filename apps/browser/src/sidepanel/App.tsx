@@ -340,69 +340,94 @@ export function App() {
             </dl>
           </Card>
 
-            {!connected ? (
-              <Card title="Pair with engine" hint="Command: Tachyon: Pair Companion (show code)">
-                <Field label="Base URL">
-                  <Input
-                    value={baseUrl}
-                    onInput={(e) => setBaseUrl((e.target as HTMLInputElement).value)}
-                    placeholder="http://127.0.0.1:41xxx"
-                  />
-                </Field>
-                <Field label="Pair code">
-                  <Input
-                    value={pairCode}
-                    onInput={(e) => setPairCode((e.target as HTMLInputElement).value)}
-                    placeholder="XXXXXXXX"
-                    maxLength={16}
-                    spellcheck={false}
-                  />
-                </Field>
-                <Button className="w-full" disabled={busy} onClick={() => void onPair()}>
-                  Pair
+          {!connected ? (
+            <Card title="Pair with engine" hint="Command: Tachyon: Pair Companion (show code)">
+              <Field label="Base URL">
+                <Input
+                  value={baseUrl}
+                  onInput={(e) => setBaseUrl((e.target as HTMLInputElement).value)}
+                  placeholder="http://127.0.0.1:41xxx"
+                />
+              </Field>
+              <Field label="Pair code">
+                <Input
+                  value={pairCode}
+                  onInput={(e) => setPairCode((e.target as HTMLInputElement).value)}
+                  placeholder="XXXXXXXX"
+                  maxLength={16}
+                  spellcheck={false}
+                />
+              </Field>
+              <Button className="w-full" disabled={busy} onClick={() => void onPair()}>
+                Pair
+              </Button>
+            </Card>
+          ) : (
+            <p className="m-0 text-[var(--tc-text-xs)] text-[var(--tc-text-muted)]">
+              Message agents from the Agents tab.
+            </p>
+          )}
+        </TabsContent>
+
+        {/* —— AGENTS: message active agents —— */}
+        <TabsContent value="agents" className={panelPad}>
+          {(error || info) && tab === "agents" ? (
+            <div className="space-y-1">
+              {error ? <p className="m-0 text-[var(--tc-text-sm)] text-[var(--tc-danger)]">{error}</p> : null}
+              {info ? <p className="m-0 text-[var(--tc-text-sm)] text-[var(--tc-success)]">{info}</p> : null}
+            </div>
+          ) : null}
+
+          {!connected ? (
+            <Card title="Agents" hint="Pair on Live first">
+              <p className="m-0 text-[var(--tc-text-sm)] text-[var(--tc-text-muted)]">
+                Not connected. Open Live and pair with the engine to list and message agents.
+              </p>
+              <Button variant="secondary" className="mt-3 w-full" onClick={() => setTab("live")}>
+                Go to Live
+              </Button>
+            </Card>
+          ) : (
+            <Card
+              title="Message agent"
+              hint="Running agents only. Working → queued until idle. List updates live."
+              footer={
+                <Button className="w-full" disabled={busy} onClick={() => void onSend()}>
+                  Send
                 </Button>
-              </Card>
-            ) : (
-              <Card
-                title="Message agent"
-                hint="Running agents only. Working → queued until idle. List updates live."
-                footer={
-                  <Button className="w-full" disabled={busy} onClick={() => void onSend()}>
-                    Send
-                  </Button>
-                }
-              >
-                <Field label="Active agent">
-                  <Select
-                    value={selectedAgent}
-                    onValueChange={setSelectedAgent}
-                    options={agentOptions.length ? agentOptions : [{ value: "", label: "No active agents" }]}
-                    placeholder="Select agent"
+              }
+            >
+              <Field label="Active agent">
+                <Select
+                  value={selectedAgent}
+                  onValueChange={setSelectedAgent}
+                  options={agentOptions.length ? agentOptions : [{ value: "", label: "No active agents" }]}
+                  placeholder="Select agent"
+                />
+              </Field>
+              <div className="mb-2.5 flex flex-col gap-1.5">
+                {displayAgents.map((a) => (
+                  <AgentRow
+                    key={a.name}
+                    name={a.name}
+                    attention={a.attention}
+                    composerOccupied={a.composerOccupied}
+                    selected={selectedAgent === a.name}
+                    onSelect={() => setSelectedAgent(a.name)}
                   />
-                </Field>
-                <div className="mb-2.5 flex flex-col gap-1.5">
-                  {displayAgents.map((a) => (
-                    <AgentRow
-                      key={a.name}
-                      name={a.name}
-                      attention={a.attention}
-                      composerOccupied={a.composerOccupied}
-                      selected={selectedAgent === a.name}
-                      onSelect={() => setSelectedAgent(a.name)}
-                    />
-                  ))}
-                </div>
-                <Field label="Message">
-                  <Textarea
-                    value={message}
-                    onInput={(e) => setMessage((e.target as HTMLTextAreaElement).value)}
-                    placeholder="What should the agent do?"
-                    maxLength={2000}
-                  />
-                </Field>
-              </Card>
-            )}
-          </TabsContent>
+                ))}
+              </div>
+              <Field label="Message">
+                <Textarea
+                  value={message}
+                  onInput={(e) => setMessage((e.target as HTMLTextAreaElement).value)}
+                  placeholder="What should the agent do?"
+                  maxLength={2000}
+                />
+              </Field>
+            </Card>
+          )}
+        </TabsContent>
 
         {/* —— TAB: live DOM read + future actions —— */}
         <TabsContent value="tab" className={panelPad}>
@@ -607,6 +632,7 @@ export function App() {
         {/* Mobile bottom nav */}
         <TabsList>
           <TabsTrigger value="live" icon={<IconBolt />} hint="Live" />
+          <TabsTrigger value="agents" icon={<IconUsers />} hint="Agents" />
           <TabsTrigger value="tab" icon={<IconWindow />} hint="Tab" />
           <TabsTrigger value="approvals" icon={<IconShield />} hint="Approvals" />
           <TabsTrigger value="audit" icon={<IconList />} hint="Audit" />
@@ -645,6 +671,17 @@ function IconBolt() {
   return iconProps(
     <>
       <path d="M13 2 3 14h8l-1 8 10-12h-8l1-8z" />
+    </>,
+  );
+}
+
+function IconUsers() {
+  return iconProps(
+    <>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
     </>,
   );
 }
