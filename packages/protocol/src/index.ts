@@ -230,7 +230,51 @@ export type CompanionTabCommand =
       value: string;
     } & CompanionTabTarget)
   | ({ id: string; kind: "eval"; at: string; expression: string } & CompanionTabTarget)
-  | ({ id: string; kind: "console"; at: string; limit?: number } & CompanionTabTarget);
+  | ({ id: string; kind: "console"; at: string; limit?: number } & CompanionTabTarget)
+  | ({
+      id: string;
+      kind: "navigate";
+      at: string;
+      action: "goto" | "back" | "forward" | "reload";
+      url?: string;
+    } & CompanionTabTarget)
+  | ({
+      id: string;
+      kind: "scroll";
+      at: string;
+      direction?: "up" | "down" | "left" | "right";
+      pixels?: number;
+      ref?: string;
+      selector?: string;
+    } & CompanionTabTarget)
+  | ({
+      id: string;
+      kind: "press_key";
+      at: string;
+      key: string;
+      modifiers?: string[];
+      ref?: string;
+      selector?: string;
+    } & CompanionTabTarget)
+  | ({
+      id: string;
+      kind: "wait_for";
+      at: string;
+      what: "element" | "text" | "navigation" | "load";
+      ref?: string;
+      selector?: string;
+      text?: string;
+      timeoutMs?: number;
+    } & CompanionTabTarget)
+  | {
+      id: string;
+      kind: "tab_open";
+      at: string;
+      url?: string;
+      active?: boolean;
+    }
+  | ({ id: string; kind: "tab_activate"; at: string } & CompanionTabTarget)
+  | ({ id: string; kind: "tab_close"; at: string } & CompanionTabTarget);
 
 export type CompanionTabErrorCode =
   | "timeout"
@@ -329,6 +373,26 @@ export type CompanionTabResult =
       documentToken?: string;
       url?: string;
       entries: Array<{ level: string; text: string; at?: string }>;
+    }
+  | {
+      ok: true;
+      id: string;
+      kind: "navigate" | "scroll" | "press_key" | "wait_for" | "tab_activate" | "tab_close";
+      tabId: string;
+      documentToken?: string;
+      url?: string;
+      urlBefore?: string;
+      urlAfter?: string;
+      detail?: string;
+    }
+  | {
+      ok: true;
+      id: string;
+      kind: "tab_open";
+      tabId: string;
+      documentToken: string;
+      url: string;
+      title: string;
     }
   | {
       ok: false;

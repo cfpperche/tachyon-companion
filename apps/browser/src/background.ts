@@ -215,8 +215,8 @@ async function startLiveStream(): Promise<void> {
             return;
           }
         } else if (ev.type === "tab.command") {
-          // Agent tool user_browser_snapshot (or similar) — fulfill if trust allows.
-          void fulfillTabCommand(client, ev.command).catch((err) => {
+          // Agent tool user_browser_* — fulfill if trust allows (SDD 420 entry includes tab_open).
+          void fulfillTabCommandEntry(client, ev.command).catch((err) => {
             console.error("tab.command fulfill failed", err);
           });
         } else if (ev.type === "approvals.changed") {
@@ -510,12 +510,322 @@ async function fulfillTabCommand(client: CompanionClient, command: CompanionTabC
     return;
   }
 
+  // ---- SDD 420 P0: navigate / scroll / keys / wait / tab lifecycle ----
+  if (command.kind === "navigate") {
+    try {
+      const tab = await chrome.tabs.get(chromeTabId);
+      const urlBefore = tab.url ?? "";
+      if (command.action === "goto") {
+        if (!command.url) {
+          await client.postTabResult({
+            ok: false,
+            id: command.id,
+            code: "unknown",
+            message: "url required for goto",
+            tabId,
+          });
+          return;
+        }
+        await chrome.tabs.update(chromeTabId, { url: command.url });
+      } else if (command.action === "reload") {
+        await chrome.tabs.reload(chromeTabId);
+      } else if (command.action === "back") {
+        await chrome.scripting.executeScript({
+          target: { tabId: chromeTabId },
+          func: () => history.back(),
+        });
+      } else if (command.action === "forward") {
+        await chrome.scripting.executeScript({
+          target: { tabId: chromeTabId },
+          func: () => history.forward(),
+        });
+      }
+      await new Promise((r) => setTimeout(r, 200));
+      const after = await chrome.tabs.get(chromeTabId);
+      const { ensureHandle } = await import("./tabHandles.js");
+      const h = ensureHandle(after);
+      await client.postTabResult({
+        ok: true,
+        id: command.id,
+        kind: "navigate",
+        tabId: h?.tabId ?? tabId,
+        documentToken: h?.documentToken,
+        urlBefore,
+        urlAfter: after.url,
+        url: after.url,
+        detail: command.action,
+      });
+    } catch (e) {
+      await client.postTabResult({
+        ok: false,
+        id: command.id,
+        code: "unknown",
+        message: e instanceof Error ? e.message : String(e),
+        tabId,
+      });
+    }
+    return;
+  }
+
+  if (command.kind === "scroll") {
+    const sel = (command.ref?.trim() || command.selector?.trim() || "").trim();
+    const direction = command.direction ?? "down";
+    const pixels = command.pixels ?? 400;
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: chromeTabId },
+        func: (d: string, px: number, selector: string) => {
+          if (selector) {
+            const el =
+              selector.startsWith("@e")
+                ? document.querySelector(`[data-tc-ref="${selector}"]`)
+                : document.querySelector(selector);
+            if (el) {
+              el.scrollIntoView({ block: "center", behavior: "instant" as ScrollBehavior });
+              return;
+            }
+          }
+          const dx = d === "left" ? -px : d === "right" ? px : 0;
+          const dy = d === "up" ? -px : d === "down" ? px : 0;
+          window.scrollBy(dx, dy);
+        },
+        args: [direction, pixels, sel],
+      });
+      await client.postTabResult({
+        ok: true,
+        id: command.id,
+        kind: "scroll",
+        tabId,
+        documentToken,
+        detail: sel || `${direction}:${pixels}`,
+      });
+    } catch (e) {
+      await client.postTabResult({
+        ok: false,
+        id: command.id,
+        code: "unknown",
+        message: e instanceof Error ? e.message : String(e),
+        tabId,
+      });
+    }
+    return;
+  }
+
+  if (command.kind === "press_key") {
+    const sel = (command.ref?.trim() || command.selector?.trim() || "").trim();
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: chromeTabId },
+        func: (key: string, mods: string[], selector: string) => {
+          const target = selector
+            ? selector.startsWith("@e")
+              ? document.querySelector(`[data-tc-ref="${selector}"]`)
+              : document.querySelector(selector)
+            : document.activeElement ?? document.body;
+          if (target instanceof HTMLElement) target.focus();
+          const opts = {
+            key,
+            bubbles: true,
+            cancelable: true,
+            ctrlKey: mods.includes("Control") || mods.includes("Ctrl"),
+            metaKey: mods.includes("Meta") || mods.includes("Command"),
+            altKey: mods.includes("Alt"),
+            shiftKey: mods.includes("Shift"),
+          };
+          (target ?? document).dispatchEvent(new KeyboardEvent("keydown", opts));
+          (target ?? document).dispatchEvent(new KeyboardEvent("keyup", opts));
+        },
+        args: [command.key, command.modifiers ?? [], sel],
+      });
+      await client.postTabResult({
+        ok: true,
+        id: command.id,
+        kind: "press_key",
+        tabId,
+        documentToken,
+        detail: command.key,
+      });
+    } catch (e) {
+      await client.postTabResult({
+        ok: false,
+        id: command.id,
+        code: "unknown",
+        message: e instanceof Error ? e.message : String(e),
+        tabId,
+      });
+    }
+    return;
+  }
+
+  if (command.kind === "wait_for") {
+    const sel = (command.ref?.trim() || command.selector?.trim() || "").trim();
+    const text = command.text ?? "";
+    const budget = Math.min(command.timeoutMs ?? 15_000, 60_000);
+    const started = Date.now();
+    let okWait = false;
+    try {
+      while (Date.now() - started < budget) {
+        if (command.what === "load") {
+          const [{ result }] = await chrome.scripting.executeScript({
+            target: { tabId: chromeTabId },
+            func: () => document.readyState,
+          });
+          if (result === "complete" || result === "interactive") {
+            okWait = true;
+            break;
+          }
+        } else if (command.what === "element" && sel) {
+          const [{ result }] = await chrome.scripting.executeScript({
+            target: { tabId: chromeTabId },
+            func: (selector: string) =>
+              !!(selector.startsWith("@e")
+                ? document.querySelector(`[data-tc-ref="${selector}"]`)
+                : document.querySelector(selector)),
+            args: [sel],
+          });
+          if (result) {
+            okWait = true;
+            break;
+          }
+        } else if (command.what === "text" && text) {
+          const [{ result }] = await chrome.scripting.executeScript({
+            target: { tabId: chromeTabId },
+            func: (t: string) => (document.body?.innerText ?? "").includes(t),
+            args: [text],
+          });
+          if (result) {
+            okWait = true;
+            break;
+          }
+        } else if (command.what === "navigation") {
+          okWait = true;
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      await client.postTabResult(
+        okWait
+          ? {
+              ok: true,
+              id: command.id,
+              kind: "wait_for",
+              tabId,
+              documentToken,
+              detail: command.what,
+            }
+          : {
+              ok: false,
+              id: command.id,
+              code: "timeout",
+              message: `wait_for ${command.what} timed out after ${budget}ms`,
+              tabId,
+            },
+      );
+    } catch (e) {
+      await client.postTabResult({
+        ok: false,
+        id: command.id,
+        code: "unknown",
+        message: e instanceof Error ? e.message : String(e),
+        tabId,
+      });
+    }
+    return;
+  }
+
+  if (command.kind === "tab_activate") {
+    try {
+      await chrome.tabs.update(chromeTabId, { active: true });
+      await client.postTabResult({
+        ok: true,
+        id: command.id,
+        kind: "tab_activate",
+        tabId,
+        documentToken,
+      });
+    } catch (e) {
+      await client.postTabResult({
+        ok: false,
+        id: command.id,
+        code: "unknown",
+        message: e instanceof Error ? e.message : String(e),
+        tabId,
+      });
+    }
+    return;
+  }
+
+  if (command.kind === "tab_close") {
+    try {
+      await chrome.tabs.remove(chromeTabId);
+      const { dropChromeTab } = await import("./tabHandles.js");
+      dropChromeTab(chromeTabId);
+      await client.postTabResult({
+        ok: true,
+        id: command.id,
+        kind: "tab_close",
+        tabId,
+      });
+    } catch (e) {
+      await client.postTabResult({
+        ok: false,
+        id: command.id,
+        code: "unknown",
+        message: e instanceof Error ? e.message : String(e),
+        tabId,
+      });
+    }
+    return;
+  }
+
+  // tab_open is handled before resolveHandle (no target tab)
   await client.postTabResult({
     ok: false,
     id: command.id,
     code: "unknown",
     message: `Unsupported tab command kind: ${String((command as { kind?: string }).kind)}`,
   });
+}
+
+// Note: tab_open must run without resolveHandle — patch entry point
+async function fulfillTabCommandEntry(client: CompanionClient, command: CompanionTabCommand): Promise<void> {
+  if (command.kind === "tab_open") {
+    try {
+      const tab = await chrome.tabs.create({
+        url: command.url ?? "about:blank",
+        active: command.active !== false,
+      });
+      const { ensureHandle } = await import("./tabHandles.js");
+      const h = ensureHandle(tab);
+      if (!h) {
+        await client.postTabResult({
+          ok: false,
+          id: command.id,
+          code: "no_tab",
+          message: "Failed to open tab",
+        });
+        return;
+      }
+      await client.postTabResult({
+        ok: true,
+        id: command.id,
+        kind: "tab_open",
+        tabId: h.tabId,
+        documentToken: h.documentToken,
+        url: h.url,
+        title: h.title,
+      });
+    } catch (e) {
+      await client.postTabResult({
+        ok: false,
+        id: command.id,
+        code: "unknown",
+        message: e instanceof Error ? e.message : String(e),
+      });
+    }
+    return;
+  }
+  return fulfillTabCommand(client, command);
 }
 
 /**
