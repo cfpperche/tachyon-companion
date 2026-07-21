@@ -1343,10 +1343,26 @@ async function fulfillTabCommand(client: CompanionClient, command: CompanionTabC
       const [{ result }] = await chrome.scripting.executeScript({
         target: { tabId: chromeTabId },
         func: (action: string, text: string | undefined) => {
-          const dlg =
-            document.querySelector("dialog[open]") ||
-            document.querySelector('[role="dialog"][aria-modal="true"]') ||
-            document.querySelector('[role="alertdialog"]');
+          // Prefer native dialog / ARIA dialog; fall back to common modal overlays (dogfood E5 / t-39cbec).
+          const candidates = [
+            document.querySelector("dialog[open]"),
+            document.querySelector('[role="dialog"][aria-modal="true"]'),
+            document.querySelector('[role="dialog"]'),
+            document.querySelector('[role="alertdialog"]'),
+            document.querySelector('[aria-modal="true"]'),
+            document.querySelector("#modal.reveal-modal, #modal.is-open, #modal[style*='display']"),
+            document.querySelector(".modal.show, .modal.is-open, .modal[aria-hidden='false']"),
+            // the-internet.herokuapp.com/entry_ad
+            document.querySelector("#modal"),
+          ].filter(Boolean) as Element[];
+          const visible = (el: Element) => {
+            if (!(el instanceof HTMLElement)) return false;
+            const st = window.getComputedStyle(el);
+            if (st.display === "none" || st.visibility === "hidden" || st.opacity === "0") return false;
+            const r = el.getBoundingClientRect();
+            return r.width > 0 && r.height > 0;
+          };
+          const dlg = candidates.find(visible) ?? candidates[0] ?? null;
           if (!dlg) return { ok: false as const, message: "No open dialog found" };
           if (action === "read") {
             return {

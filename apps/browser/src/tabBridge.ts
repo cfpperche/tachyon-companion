@@ -234,23 +234,44 @@ export async function captureActiveTabScreenshot(opts?: {
       return stitched;
     }
 
-    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
-      format,
-      ...(format === "jpeg" ? { quality } : {}),
-    });
-    if (!dataUrl || typeof dataUrl !== "string") {
-      return { ok: false, code: "unknown", message: "captureVisibleTab returned empty.", url: tab.url };
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 150));
+        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+          format,
+          ...(format === "jpeg" ? { quality } : {}),
+        });
+        if (!dataUrl || typeof dataUrl !== "string") {
+          lastErr = new Error("captureVisibleTab returned empty.");
+          continue;
+        }
+        const b64 = dataUrl.includes(",") ? dataUrl.split(",")[1]! : dataUrl;
+        const byteLength = Math.floor((b64.length * 3) / 4);
+        return {
+          ok: true,
+          url: tab.url ?? "",
+          title: tab.title ?? "",
+          capturedAt: new Date().toISOString(),
+          dataUrl,
+          byteLength,
+          mimeType: format === "png" ? "image/png" : "image/jpeg",
+        };
+      } catch (e) {
+        lastErr = e;
+        // "image readback failed" is often transient (focus/GPU) — one retry (t-a8e4ed).
+        const msg = e instanceof Error ? e.message : String(e);
+        if (!/readback|empty|cannot capture/i.test(msg)) break;
+      }
     }
-    const b64 = dataUrl.includes(",") ? dataUrl.split(",")[1]! : dataUrl;
-    const byteLength = Math.floor((b64.length * 3) / 4);
     return {
-      ok: true,
-      url: tab.url ?? "",
-      title: tab.title ?? "",
-      capturedAt: new Date().toISOString(),
-      dataUrl,
-      byteLength,
-      mimeType: format === "png" ? "image/png" : "image/jpeg",
+      ok: false,
+      code: "unknown",
+      message:
+        lastErr instanceof Error
+          ? lastErr.message
+          : "Screenshot failed. Ensure agent tab host access is granted and a normal http(s) tab is focused.",
+      url: tab.url,
     };
   } catch (e) {
     return {

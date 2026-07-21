@@ -44,6 +44,8 @@ export type TabRefEntry = {
   tag?: string;
   role?: string;
   name?: string;
+  /** Anchor href for safety classification (SDD 420). */
+  href?: string;
 };
 
 export type TabSnapshotOk = {
@@ -223,19 +225,32 @@ function collectRefs(root: Element): TabRefEntry[] {
   }
   for (const el of Array.from(nodes)) {
     if (n >= 200) break;
-    if (el instanceof HTMLInputElement && el.type === "password") continue;
+    // Password fields get @e refs (t-d16753) but values stay redacted on read/fill.
     n += 1;
     const ref = `@e${n}`;
     el.setAttribute("data-tc-ref", ref);
     const entry: TabRefEntry = { ref, tag: el.tagName.toLowerCase(), selector: cssPath(el) };
     const role = el.getAttribute("role");
     if (role) entry.role = clip(role, 32);
-    const name =
-      el.getAttribute("aria-label") ||
-      el.getAttribute("name") ||
-      el.getAttribute("data-testid") ||
-      (el instanceof HTMLElement ? el.innerText?.slice(0, 40) : undefined);
-    if (name) entry.name = clip(name, 80);
+    if (el instanceof HTMLInputElement && el.type === "password") {
+      entry.name = "[password]";
+      entry.role = entry.role ?? "textbox";
+    } else {
+      const name =
+        el.getAttribute("aria-label") ||
+        el.getAttribute("name") ||
+        el.getAttribute("data-testid") ||
+        (el instanceof HTMLAnchorElement ? el.getAttribute("href") : undefined) ||
+        (el instanceof HTMLElement ? el.innerText?.slice(0, 40) : undefined);
+      if (name) entry.name = clip(name, 80);
+    }
+    if (el instanceof HTMLAnchorElement && el.href) {
+      entry.href = clip(el.href, 200);
+      if (!entry.name || entry.name.startsWith("http")) {
+        const txt = (el.innerText || el.textContent || "").trim();
+        if (txt) entry.name = clip(txt, 80);
+      }
+    }
     refs.push(entry);
   }
   return refs;
