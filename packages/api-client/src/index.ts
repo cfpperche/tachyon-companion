@@ -54,20 +54,35 @@ export class CompanionClient {
 
   /**
    * Pair with a short-lived code from Tachyon Control.
-   * Stub: returns engine_offline until the ADE pairing endpoint exists.
+   * Network/permission failures return structured PairResponse (never throw) so the UI can recover.
    */
-  async pair(request: Omit<PairRequest, "protocolVersion"> & { protocolVersion?: number }): Promise<PairResponse> {
+  async pair(
+    request: Omit<PairRequest, "protocolVersion"> & { protocolVersion?: number },
+    opts?: { signal?: AbortSignal },
+  ): Promise<PairResponse> {
     if (!this.baseUrl) {
       return {
         ok: false,
         code: "engine_offline",
-        message: "No companion base URL configured. Pairing endpoint lands with ADE SDD 414 slice 2.",
+        message: "No companion base URL configured. Use Control → Companion → Show pair code.",
       };
     }
-    return this.postJson<PairResponse>("/companion/v1/pair", {
-      ...request,
-      protocolVersion: request.protocolVersion ?? COMPANION_PROTOCOL_VERSION,
-    });
+    try {
+      return await this.postJson<PairResponse>(
+        "/companion/v1/pair",
+        {
+          ...request,
+          protocolVersion: request.protocolVersion ?? COMPANION_PROTOCOL_VERSION,
+        },
+        opts?.signal,
+      );
+    } catch (error) {
+      return {
+        ok: false,
+        code: "engine_offline",
+        message: humanizeNetworkError(error, this.baseUrl),
+      };
+    }
   }
 
   async unpair(): Promise<{ ok: boolean; message?: string }> {
@@ -195,10 +210,11 @@ export class CompanionClient {
     return this.getJson("/companion/v1/tab/pending");
   }
 
-  private async getJson<T>(path: string): Promise<T> {
+  private async getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
     const res = await this.fetchImpl(this.url(path), {
       method: "GET",
       headers: this.headers(),
+      signal: signal ?? AbortSignal.timeout(20_000),
     });
     if (!res.ok) {
       throw new Error(`GET ${path} → ${res.status}`);
@@ -206,12 +222,18 @@ export class CompanionClient {
     return (await res.json()) as T;
   }
 
-  private async postJson<T>(path: string, body: unknown): Promise<T> {
-    const res = await this.fetchImpl(this.url(path), {
-      method: "POST",
-      headers: { ...this.headers(), "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
+  private async postJson<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+    let res: Response;
+    try {
+      res = await this.fetchImpl(this.url(path), {
+        method: "POST",
+        headers: { ...this.headers(), "content-type": "application/json" },
+        body: JSON.stringify(body),
+        signal: signal ?? AbortSignal.timeout(20_000),
+      });
+    } catch (error) {
+      throw new Error(humanizeNetworkError(error, this.baseUrl));
+    }
     if (!res.ok && res.headers.get("content-type")?.includes("application/json")) {
       return (await res.json()) as T;
     }
@@ -235,6 +257,23 @@ export class CompanionClient {
 
 export { COMPANION_PROTOCOL_VERSION };
 export type { CompanionLiveState };
+
+/** Map fetch / abort failures into a short operator-facing message. */
+export function humanizeNetworkError(error: unknown, baseUrl?: string): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  const lower = raw.toLowerCase();
+  if (lower.includes("abort") || lower.includes("timeout")) {
+    return `Timed out talking to the engine${baseUrl ? ` at ${baseUrl}` : ""}. Is Tachyon running? Try Show pair code again.`;
+  }
+  if (lower.includes("failed to fetch") || lower.includes("networkerror") || lower.includes("load failed")) {
+    return (
+      `Cannot reach the engine${baseUrl ? ` at ${baseUrl}` : ""} (network / permission). ` +
+      `Check: engine is up, Base URL matches Control, and this extension may access that host. ` +
+      `On WSL + Windows Chrome, 127.0.0.1 must be the port forwarded to Windows.`
+    );
+  }
+  return raw || "Network request failed";
+}
 
 /** Minimal SSE parser for fetch ReadableStream bodies. */
 async function* parseSse(

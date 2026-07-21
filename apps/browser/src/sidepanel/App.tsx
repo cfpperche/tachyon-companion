@@ -183,8 +183,8 @@ export function App() {
     setInfo(undefined);
     try {
       const res = await pairApi(baseUrl.trim(), pairCode.trim());
-      if (!res.ok) {
-        setError(res.message ?? res.code ?? "pair failed");
+      if (!res?.ok) {
+        setError(res?.message ?? res?.code ?? "Pair failed. Check Base URL, code, and that Tachyon is running.");
         return;
       }
       setPairCode("");
@@ -195,6 +195,13 @@ export function App() {
     } finally {
       setBusy(false);
     }
+  };
+
+  /** Always available while disconnected — clears stuck loading / errors so the user can retry. */
+  const onResetPairForm = () => {
+    setBusy(false);
+    setError(undefined);
+    setInfo(undefined);
   };
 
   const onUnpair = async () => {
@@ -472,6 +479,7 @@ export function App() {
                   value={baseUrl}
                   onInput={(e) => setBaseUrl((e.target as HTMLInputElement).value)}
                   placeholder="http://127.0.0.1:41xxx"
+                  disabled={busy}
                 />
               </Field>
               <Field label="Pair code">
@@ -481,11 +489,31 @@ export function App() {
                   placeholder="XXXXXXXX"
                   maxLength={16}
                   spellcheck={false}
+                  disabled={busy}
                 />
               </Field>
-              <Button className="w-full" disabled={busy} onClick={() => void onPair()}>
-                Pair
-              </Button>
+              {error ? (
+                <p className="m-0 mb-2 text-[var(--tc-text-sm)] text-[var(--tc-danger)]" data-testid="pair-error">
+                  {error}
+                </p>
+              ) : null}
+              {busy ? (
+                <p className="m-0 mb-2 text-[var(--tc-text-xs)] text-[var(--tc-text-muted)]">Pairing…</p>
+              ) : null}
+              <div className="flex flex-col gap-2">
+                <Button className="w-full" disabled={busy || !baseUrl.trim() || !pairCode.trim()} onClick={() => void onPair()}>
+                  {busy ? "Pairing…" : "Pair"}
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="w-full"
+                  data-testid="pair-reset"
+                  onClick={onResetPairForm}
+                  disabled={!busy && !error}
+                >
+                  {busy ? "Cancel" : "Clear error / retry"}
+                </Button>
+              </div>
             </Card>
           ) : (
             <p className="m-0 text-[var(--tc-text-xs)] text-[var(--tc-text-muted)]">

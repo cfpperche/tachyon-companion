@@ -24,6 +24,48 @@ import { readTrust } from "./trust.js";
 const STORAGE_KEY = "tachyonCompanion.v1";
 const LIVE_KEY = "tachyonCompanion.live.v1";
 
+/** Origins the pair HTTP client needs (loopback engine). */
+const LOOPBACK_ENGINE_ORIGINS = ["http://127.0.0.1/*", "http://localhost/*", "http://[::1]/*"] as const;
+
+/**
+ * Ensure MV3 host access for the engine Base URL before pair POST.
+ * Declared host_permissions cover loopback; non-loopback uses optional permissions.
+ * chrome.permissions.request is best from the side panel (user gesture); SW contains as fallback.
+ */
+async function ensureEngineHostPermission(baseUrl: string): Promise<void> {
+  let originPattern: string;
+  try {
+    const u = new URL(baseUrl);
+    originPattern = `${u.protocol}//${u.host}/*`;
+  } catch {
+    throw new Error(`Invalid Base URL: ${baseUrl}`);
+  }
+  const origins = Array.from(new Set([originPattern, ...LOOPBACK_ENGINE_ORIGINS]));
+  try {
+    const has = await chrome.permissions.contains({ origins });
+    if (has) return;
+    const granted = await chrome.permissions.request({ origins });
+    if (!granted) {
+      throw new Error(
+        `Chrome blocked access to ${originPattern}. Reload the extension after update, or grant host access when prompted.`,
+      );
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Chrome blocked")) throw error;
+    // contains/request can throw in restricted contexts — still attempt pair if host_permissions cover loopback
+    let isLoopback = false;
+    try {
+      const host = new URL(baseUrl).hostname;
+      isLoopback = host === "127.0.0.1" || host === "localhost" || host === "[::1]" || host === "::1";
+    } catch {
+      /* ignore */
+    }
+    if (!isLoopback) {
+      throw error instanceof Error ? error : new Error(String(error));
+    }
+  }
+}
+
 interface StoredState {
   baseUrl?: string;
   sessionToken?: string;
@@ -525,42 +567,53 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       const baseUrl = String(message.baseUrl ?? "").replace(/\/$/, "");
       const pairCode = String(message.pairCode ?? "").trim().toUpperCase();
       if (!baseUrl || !pairCode) {
-        sendResponse({ ok: false, message: "baseUrl and pairCode are required" });
+        sendResponse({ ok: false, code: "unknown", message: "baseUrl and pairCode are required" });
         return;
       }
-      const client = new CompanionClient({ baseUrl });
-      const result = await client.pair({
-        pairCode,
-        client: {
-          kind: "browser",
-          name: "Tachyon Companion",
-          version: chrome.runtime.getManifest().version,
-        },
-      });
-      if (!result.ok) {
-        sendResponse(result);
-        return;
+      try {
+        // Best-effort: ensure host access (side panel should request first; SW may be limited).
+        await ensureEngineHostPermission(baseUrl);
+        const client = new CompanionClient({ baseUrl });
+        const result = await client.pair({
+          pairCode,
+          client: {
+            kind: "browser",
+            name: "Tachyon Companion",
+            version: chrome.runtime.getManifest().version,
+          },
+        });
+        if (!result.ok) {
+          sendResponse(result);
+          return;
+        }
+        const status: ConnectionStatus = {
+          status: "connected",
+          engine: result.engine,
+          expiresAt: result.expiresAt,
+          protocolVersion: COMPANION_PROTOCOL_VERSION,
+        };
+        const next: StoredState = {
+          baseUrl,
+          sessionToken: result.sessionToken,
+          status,
+        };
+        await writeState(next);
+        await writeLive({
+          connection: statusView(next, status),
+          agents: [],
+          seq: 0,
+          stream: "connecting",
+        });
+        void startLiveStream();
+        sendResponse({ ok: true, status, baseUrl });
+      } catch (error) {
+        // Never leave an uncaught promise — UI must be able to reset and retry.
+        sendResponse({
+          ok: false,
+          code: "engine_offline",
+          message: error instanceof Error ? error.message : String(error),
+        });
       }
-      const status: ConnectionStatus = {
-        status: "connected",
-        engine: result.engine,
-        expiresAt: result.expiresAt,
-        protocolVersion: COMPANION_PROTOCOL_VERSION,
-      };
-      const next: StoredState = {
-        baseUrl,
-        sessionToken: result.sessionToken,
-        status,
-      };
-      await writeState(next);
-      await writeLive({
-        connection: statusView(next, status),
-        agents: [],
-        seq: 0,
-        stream: "connecting",
-      });
-      void startLiveStream();
-      sendResponse({ ok: true, status, baseUrl });
       return;
     }
 

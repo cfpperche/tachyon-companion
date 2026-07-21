@@ -32,8 +32,58 @@ export async function getStatus(): Promise<ConnectionView> {
   return chrome.runtime.sendMessage({ type: "getStatus" });
 }
 
-export async function pair(baseUrl: string, pairCode: string): Promise<{ ok: boolean; message?: string; code?: string }> {
-  return chrome.runtime.sendMessage({ type: "pair", baseUrl, pairCode });
+/** Request host access for the engine URL from the side panel (user gesture). */
+export async function ensureEngineHostAccess(baseUrl: string): Promise<{ ok: boolean; message?: string }> {
+  let originPattern: string;
+  try {
+    const u = new URL(baseUrl.trim());
+    originPattern = `${u.protocol}//${u.host}/*`;
+  } catch {
+    return { ok: false, message: `Invalid Base URL: ${baseUrl}` };
+  }
+  const origins = [originPattern, "http://127.0.0.1/*", "http://localhost/*", "http://[::1]/*"];
+  try {
+    const has = await chrome.permissions.contains({ origins });
+    if (has) return { ok: true };
+    const granted = await chrome.permissions.request({ origins });
+    if (!granted) {
+      return {
+        ok: false,
+        message: `Permission denied for ${originPattern}. Allow site access to pair with the local engine.`,
+      };
+    }
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+export async function pair(
+  baseUrl: string,
+  pairCode: string,
+): Promise<{ ok: boolean; message?: string; code?: string }> {
+  try {
+    const host = await ensureEngineHostAccess(baseUrl);
+    if (!host.ok) return { ok: false, code: "engine_offline", message: host.message };
+    const res = await chrome.runtime.sendMessage({ type: "pair", baseUrl, pairCode });
+    if (res == null) {
+      return {
+        ok: false,
+        code: "unknown",
+        message: "No response from the extension background. Reload the extension and try again.",
+      };
+    }
+    return res as { ok: boolean; message?: string; code?: string };
+  } catch (error) {
+    return {
+      ok: false,
+      code: "unknown",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 export async function unpair(): Promise<void> {
