@@ -778,6 +778,325 @@ async function fulfillTabCommand(client: CompanionClient, command: CompanionTabC
     return;
   }
 
+  // ---- SDD 420 P1: get / find / hover / select_option / check ----
+  if (command.kind === "get") {
+    const sel = (command.ref?.trim() || command.selector?.trim() || "").trim();
+    if (!sel) {
+      await client.postTabResult({
+        ok: false,
+        id: command.id,
+        code: "not_found",
+        message: "Provide ref (preferred) or selector.",
+        tabId,
+      });
+      return;
+    }
+    try {
+      const [{ result }] = await chrome.scripting.executeScript({
+        target: { tabId: chromeTabId },
+        func: (selector: string, what: string, attrName: string | undefined) => {
+          const el =
+            /^@e\d+$/i.test(selector)
+              ? document.querySelector(`[data-tc-ref="${selector}"]`)
+              : document.querySelector(selector);
+          if (!el) return { ok: false as const, code: "not_found", message: `No element: ${selector}` };
+          const isPassword = el instanceof HTMLInputElement && el.type === "password";
+          const secretAttr = (n: string) =>
+            /password|passwd|pwd|token|secret|authorization|cookie/i.test(n);
+          if (what === "text") {
+            const t =
+              el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
+                ? isPassword
+                  ? "[redacted]"
+                  : el.value
+                : (el as HTMLElement).innerText || el.textContent || "";
+            return { ok: true as const, data: t.slice(0, 8000) };
+          }
+          if (what === "html") {
+            return { ok: true as const, data: (el as HTMLElement).outerHTML?.slice(0, 12_000) ?? "" };
+          }
+          if (what === "value") {
+            if (isPassword) return { ok: false as const, code: "denied", message: "Password value blocked." };
+            if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) {
+              return { ok: true as const, data: el.value };
+            }
+            return { ok: true as const, data: (el as HTMLElement).innerText ?? "" };
+          }
+          if (what === "attribute") {
+            const name = (attrName ?? "").trim();
+            if (!name) return { ok: false as const, code: "unknown", message: "attribute name required" };
+            if (secretAttr(name)) {
+              return { ok: false as const, code: "denied", message: `Attribute '${name}' blocked (secrets).` };
+            }
+            return { ok: true as const, data: el.getAttribute(name) };
+          }
+          // state
+          const he = el as HTMLElement;
+          const st: Record<string, unknown> = {
+            tag: el.tagName.toLowerCase(),
+            visible: !!(he.offsetWidth || he.offsetHeight || he.getClientRects().length),
+            disabled: "disabled" in el ? Boolean((el as HTMLInputElement).disabled) : false,
+            focused: document.activeElement === el,
+          };
+          if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+            st.type = el instanceof HTMLInputElement ? el.type : "textarea";
+            st.readOnly = el.readOnly;
+            if (el instanceof HTMLInputElement) st.checked = el.checked;
+          }
+          if (el instanceof HTMLSelectElement) {
+            st.selectedIndex = el.selectedIndex;
+            st.value = el.value;
+          }
+          return { ok: true as const, data: st };
+        },
+        args: [sel, command.what, command.attribute],
+      });
+      if (!result || result.ok === false) {
+        await client.postTabResult({
+          ok: false,
+          id: command.id,
+          code: (result?.code as "not_found" | "denied" | "unknown") ?? "unknown",
+          message: result?.message ?? "get failed",
+          tabId,
+        });
+        return;
+      }
+      await client.postTabResult({
+        ok: true,
+        id: command.id,
+        kind: "get",
+        tabId,
+        documentToken,
+        what: command.what,
+        attribute: command.attribute,
+        data: result.data,
+      });
+    } catch (e) {
+      await client.postTabResult({
+        ok: false,
+        id: command.id,
+        code: "unknown",
+        message: e instanceof Error ? e.message : String(e),
+        tabId,
+      });
+    }
+    return;
+  }
+
+  if (command.kind === "find") {
+    const needle = command.text;
+    const limit = Math.min(command.limit ?? 20, 50);
+    try {
+      const [{ result }] = await chrome.scripting.executeScript({
+        target: { tabId: chromeTabId },
+        func: (text: string, max: number) => {
+          const out: Array<{ ref?: string; selector?: string; text: string; tag?: string }> = [];
+          const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+          let node = walker.nextNode();
+          while (node && out.length < max) {
+            const el = node as HTMLElement;
+            const t = (el.innerText || "").trim();
+            if (t && t.includes(text) && el.children.length === 0) {
+              const ref = el.getAttribute("data-tc-ref") ?? undefined;
+              out.push({
+                ref: ref ?? undefined,
+                text: t.slice(0, 200),
+                tag: el.tagName.toLowerCase(),
+              });
+            }
+            node = walker.nextNode();
+          }
+          // fallback: broader match on leaves with short text
+          if (out.length === 0) {
+            for (const el of Array.from(document.querySelectorAll("a,button,label,span,p,li,td,th,h1,h2,h3"))) {
+              if (out.length >= max) break;
+              const t = ((el as HTMLElement).innerText || "").trim();
+              if (t.includes(text)) {
+                out.push({
+                  ref: el.getAttribute("data-tc-ref") ?? undefined,
+                  text: t.slice(0, 200),
+                  tag: el.tagName.toLowerCase(),
+                });
+              }
+            }
+          }
+          return out;
+        },
+        args: [needle, limit],
+      });
+      await client.postTabResult({
+        ok: true,
+        id: command.id,
+        kind: "find",
+        tabId,
+        documentToken,
+        matches: result ?? [],
+      });
+    } catch (e) {
+      await client.postTabResult({
+        ok: false,
+        id: command.id,
+        code: "unknown",
+        message: e instanceof Error ? e.message : String(e),
+        tabId,
+      });
+    }
+    return;
+  }
+
+  if (command.kind === "hover") {
+    const sel = (command.ref?.trim() || command.selector?.trim() || "").trim();
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: chromeTabId },
+        func: (selector: string) => {
+          const el =
+            /^@e\d+$/i.test(selector)
+              ? document.querySelector(`[data-tc-ref="${selector}"]`)
+              : document.querySelector(selector);
+          if (!el) throw new Error(`No element: ${selector}`);
+          el.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+          el.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+          el.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+        },
+        args: [sel],
+      });
+      await client.postTabResult({
+        ok: true,
+        id: command.id,
+        kind: "hover",
+        tabId,
+        documentToken,
+        detail: sel,
+      });
+    } catch (e) {
+      await client.postTabResult({
+        ok: false,
+        id: command.id,
+        code: "unknown",
+        message: e instanceof Error ? e.message : String(e),
+        tabId,
+      });
+    }
+    return;
+  }
+
+  if (command.kind === "select_option") {
+    const sel = (command.ref?.trim() || command.selector?.trim() || "").trim();
+    try {
+      const [{ result }] = await chrome.scripting.executeScript({
+        target: { tabId: chromeTabId },
+        func: (
+          selector: string,
+          value: string | undefined,
+          label: string | undefined,
+          index: number | undefined,
+        ) => {
+          const el =
+            /^@e\d+$/i.test(selector)
+              ? document.querySelector(`[data-tc-ref="${selector}"]`)
+              : document.querySelector(selector);
+          if (!(el instanceof HTMLSelectElement)) {
+            return { ok: false as const, message: "Target is not a <select>" };
+          }
+          if (value !== undefined) {
+            el.value = value;
+          } else if (label !== undefined) {
+            const opt = Array.from(el.options).find((o) => o.text.trim() === label || o.label === label);
+            if (!opt) return { ok: false as const, message: `No option label: ${label}` };
+            el.value = opt.value;
+          } else if (index !== undefined) {
+            if (index < 0 || index >= el.options.length) {
+              return { ok: false as const, message: `index ${index} out of range` };
+            }
+            el.selectedIndex = index;
+          }
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+          return { ok: true as const, detail: el.value };
+        },
+        args: [sel, command.value, command.label, command.index],
+      });
+      if (!result?.ok) {
+        await client.postTabResult({
+          ok: false,
+          id: command.id,
+          code: "not_applied",
+          message: result?.message ?? "select_option failed",
+          tabId,
+        });
+        return;
+      }
+      await client.postTabResult({
+        ok: true,
+        id: command.id,
+        kind: "select_option",
+        tabId,
+        documentToken,
+        detail: result.detail,
+      });
+    } catch (e) {
+      await client.postTabResult({
+        ok: false,
+        id: command.id,
+        code: "unknown",
+        message: e instanceof Error ? e.message : String(e),
+        tabId,
+      });
+    }
+    return;
+  }
+
+  if (command.kind === "check") {
+    const sel = (command.ref?.trim() || command.selector?.trim() || "").trim();
+    try {
+      const [{ result }] = await chrome.scripting.executeScript({
+        target: { tabId: chromeTabId },
+        func: (selector: string, checked: boolean) => {
+          const el =
+            /^@e\d+$/i.test(selector)
+              ? document.querySelector(`[data-tc-ref="${selector}"]`)
+              : document.querySelector(selector);
+          if (!(el instanceof HTMLInputElement) || (el.type !== "checkbox" && el.type !== "radio")) {
+            return { ok: false as const, message: "Target is not checkbox/radio" };
+          }
+          if (el.checked !== checked) {
+            el.click();
+          }
+          return { ok: true as const, detail: el.checked ? "checked" : "unchecked" };
+        },
+        args: [sel, command.checked],
+      });
+      if (!result?.ok) {
+        await client.postTabResult({
+          ok: false,
+          id: command.id,
+          code: "not_applied",
+          message: result?.message ?? "check failed",
+          tabId,
+        });
+        return;
+      }
+      await client.postTabResult({
+        ok: true,
+        id: command.id,
+        kind: "check",
+        tabId,
+        documentToken,
+        detail: result.detail,
+      });
+    } catch (e) {
+      await client.postTabResult({
+        ok: false,
+        id: command.id,
+        code: "unknown",
+        message: e instanceof Error ? e.message : String(e),
+        tabId,
+      });
+    }
+    return;
+  }
+
   // tab_open is handled before resolveHandle (no target tab)
   await client.postTabResult({
     ok: false,
