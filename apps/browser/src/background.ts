@@ -857,7 +857,8 @@ async function fulfillTabCommand(client: CompanionClient, command: CompanionTabC
           }
           return { ok: true as const, data: st };
         },
-        args: [sel, command.what, command.attribute],
+        // Chrome executeScript rejects undefined in args — always pass JSON-serializable values.
+        args: [sel, command.what, command.attribute ?? null],
       });
       if (!result || result.ok === false) {
         await client.postTabResult({
@@ -1023,7 +1024,7 @@ async function fulfillTabCommand(client: CompanionClient, command: CompanionTabC
           el.dispatchEvent(new Event("change", { bubbles: true }));
           return { ok: true as const, detail: el.value };
         },
-        args: [sel, command.value, command.label, command.index],
+        args: [sel, command.value ?? null, command.label ?? null, command.index ?? null],
       });
       if (!result?.ok) {
         await client.postTabResult({
@@ -1380,7 +1381,7 @@ async function fulfillTabCommand(client: CompanionClient, command: CompanionTabC
           else if (dlg instanceof HTMLDialogElement) dlg.close();
           return { ok: true as const, detail: "dismiss" };
         },
-        args: [command.action, command.text],
+        args: [command.action, command.text ?? null],
       });
       if (!result?.ok) {
         await client.postTabResult({
