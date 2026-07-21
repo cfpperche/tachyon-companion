@@ -55,25 +55,9 @@ function applyTheme(theme: Theme) {
   }
 }
 
-/** Prototype-only fixtures for “product complete” illustrations. */
-const PROTO_AGENTS: AgentView[] = [
-  { name: "grok", attention: "idle", composerOccupied: false },
-  { name: "codex", attention: "working", composerOccupied: true },
-  { name: "claude", attention: "needs-input", composerOccupied: false },
-];
-
-const PROTO_AUDIT = [
-  { t: "14:02", kind: "prompt", text: "→ grok: review the open PR comments" },
-  { t: "14:01", kind: "tab", text: "snapshot x.com/home (12.4k chars)" },
-  { t: "13:58", kind: "action", text: "click [data-testid=login] — ok" },
-  { t: "13:55", kind: "pair", text: "paired workspace @ 127.0.0.1:41179" },
-];
-
-
 export function App() {
   const [tab, setTab] = useState("live");
   const [theme, setTheme] = useState<Theme>("system");
-  const [protoMode, setProtoMode] = useState(true);
 
   const [conn, setConn] = useState<ConnectionView>({ status: "disconnected" });
   const [stream, setStream] = useState<LiveView["stream"]>("idle");
@@ -161,11 +145,7 @@ export function App() {
   }, []);
 
   const connected = conn.status === "connected";
-  const displayAgents = useMemo(() => {
-    if (agents.length > 0) return agents;
-    if (protoMode && !connected) return PROTO_AGENTS;
-    return [];
-  }, [agents, protoMode, connected]);
+  const displayAgents = useMemo(() => agents, [agents]);
 
   // While Agents is open, re-list from engine so new spawns appear without leaving the tab.
   useEffect(() => {
@@ -405,7 +385,7 @@ export function App() {
       return;
     }
     if (!connected) {
-      setError(protoMode ? "Prototype: connect (Pair) to send for real." : "Not connected.");
+      setError("Not connected.");
       setBusy(false);
       return;
     }
@@ -792,7 +772,7 @@ export function App() {
         <TabsContent value="audit" className={panelPad}>
             <Card title="Activity" hint="What Companion did on this machine">
               <ul className="m-0 list-none space-y-2 p-0">
-                {(protoMode ? PROTO_AUDIT : [{ t: "—", kind: "info", text: "No events yet" }]).map((e, i) => (
+                {[{ t: "—", kind: "info", text: "No events yet" }].map((e, i) => (
                   <li
                     key={i}
                     className="flex gap-2 border-b border-[var(--tc-border)] pb-2 last:border-0 last:pb-0"
@@ -860,41 +840,6 @@ export function App() {
               </div>
             </Card>
 
-            <Card title="Prototype mode" hint="Illustrates future product surfaces with sample data">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-[var(--tc-text-sm)] font-semibold">Show vision UI</div>
-                  <p className="m-0 text-[10px] text-[var(--tc-text-muted)]">
-                    When on, Tab / Approvals / Audit use sample data. Live pair + prompt stay real when connected.
-                  </p>
-                </div>
-                <Switch checked={protoMode} onCheckedChange={setProtoMode} />
-              </div>
-            </Card>
-
-            <Card title="Design system">
-              <p className="m-0 mb-2 text-[var(--tc-text-xs)] text-[var(--tc-text-muted)]">
-                Stack: Preact · Tailwind · Radix · <code className="text-[var(--tc-text)]">@tachyon-companion/browser-ui</code>{" "}
-                (own components, no shadcn). Tokens support light / dark / system.
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                <Badge tone="success" dot>
-                  success
-                </Badge>
-                <Badge tone="working" dot>
-                  working
-                </Badge>
-                <Badge tone="warning" dot>
-                  warning
-                </Badge>
-                <Badge tone="danger" dot>
-                  danger
-                </Badge>
-                <Badge tone="info" dot>
-                  info
-                </Badge>
-              </div>
-            </Card>
         </TabsContent>
 
         {/* Mobile bottom nav */}
