@@ -7,6 +7,7 @@
     "build:css": "tailwindcss -i ./src/styles/input.css -o ./dist-unpacked/sidepanel.css --minify",
     "build": "node ./scripts/build.mjs",
     "pack": "node ./scripts/build.mjs",
+    "pack:staging": "TACHYON_COMPANION_STAGING_ONLY=1 node ./scripts/build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

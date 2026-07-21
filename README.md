@@ -43,10 +43,16 @@ not a tiny action popup. Implemented with the MV3
 
 ### Install for Chrome (local package)
 
+**Canonical dogfood path (always):** `dist/releases/tachyon-companion-browser-<version>/`
+
 ```bash
+# Any of these end in dist/releases/ (pack:browser is an alias of pack:chrome):
 npm run pack:chrome
+npm run pack:browser
+
 # → dist/releases/tachyon-companion-browser-<version>.zip
 # → dist/releases/tachyon-companion-browser-<version>/   (Load unpacked)
+# → dist/releases/LATEST  (absolute path to last unpacked folder)
 
 # One-shot helper (prints paths; optional Chrome launch with isolated profile):
 npm run install:chrome
@@ -55,12 +61,14 @@ npm run install:chrome:launch   # opens Chrome with the extension preloaded
 
 Manual:
 
-1. `npm run pack:chrome`
+1. `npm run pack:chrome` (or `pack:browser` — same thing)
 2. Chrome → `chrome://extensions` → Developer mode → **Load unpacked**
 3. Select `dist/releases/tachyon-companion-browser-<version>/`
-4. Pair: in Tachyon (Dev Host), command **Tachyon: Pair Companion (show code)** → paste base URL + code in the popup
+   - Windows host: `\\wsl.localhost\Ubuntu\home\goat\tachyon-companion\dist\releases\tachyon-companion-browser-<version>`
+4. Pair: in Tachyon (Dev Host), Control → Companion → **Show pair code** (or command palette)
 
-Raw build only (no release zip): `npm run pack:browser` → `apps/browser/dist-unpacked/`
+**Do not** Load unpacked from `apps/browser/dist-unpacked/` — that is **staging only**.  
+Staging-only build (CI intermediate): `npm run pack:browser:staging`
 
 ## Protocol
 

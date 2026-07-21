@@ -104,8 +104,20 @@ for (const size of [16, 48, 128]) {
   writeFileSync(join(outDir, "icons", `icon${size}.png`), solidPng(size, [0x4c, 0x6e, 0xf5]));
 }
 
-console.log(`Unpacked extension → ${outDir}`);
-console.log("Toolbar icon opens Side Panel (Preact + Tailwind + browser-ui).");
+console.log(`Staging build → ${outDir}`);
+console.log("(staging only — not for Chrome Load unpacked)");
+
+// Always promote to dist/releases/ unless explicitly skipped (pack-chrome does its own publish).
+if (process.env.TACHYON_COMPANION_STAGING_ONLY !== "1") {
+  const publish = spawnSync(
+    process.execPath,
+    [join(repoRoot, "scripts/publish-browser-release.mjs")],
+    { cwd: repoRoot, stdio: "inherit", shell: false },
+  );
+  if (publish.status !== 0) process.exit(publish.status ?? 1);
+} else {
+  console.log("Skipped publish (TACHYON_COMPANION_STAGING_ONLY=1). Run: npm run pack:chrome");
+}
 
 function solidPng(size, rgb) {
   const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);

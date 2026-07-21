@@ -63,16 +63,21 @@ resolve_browser() {
   return 1
 }
 
+WSL_UNC="\\\\wsl.localhost\\Ubuntu${OUT_DIR//\//\\}"
 echo ""
 echo "=== Tachyon Companion browser package ==="
 echo "  Unpacked: $OUT_DIR"
+echo "  Windows:  $WSL_UNC"
 echo "  Zip:      $ZIP"
+echo "  LATEST:   $ROOT/dist/releases/LATEST"
 echo ""
 echo "Manual install (works in Google Chrome):"
 echo "  1. Open chrome://extensions"
 echo "  2. Turn on Developer mode"
 echo "  3. Click \"Load unpacked\""
 echo "  4. Select: $OUT_DIR"
+echo "     (from Windows Explorer: $WSL_UNC)"
+echo "  Do NOT use apps/browser/dist-unpacked (staging only)."
 echo ""
 
 if [[ "$LAUNCH" -eq 1 ]]; then
