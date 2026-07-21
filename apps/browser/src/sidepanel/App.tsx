@@ -56,7 +56,8 @@ function applyTheme(theme: Theme) {
 }
 
 export function App() {
-  const [tab, setTab] = useState("live");
+  /** Paired app tabs: agents first. Unpaired uses dedicated login shell (no tabs). */
+  const [tab, setTab] = useState("agents");
   const [theme, setTheme] = useState<Theme>("system");
 
   const [conn, setConn] = useState<ConnectionView>({ status: "disconnected" });
@@ -145,6 +146,13 @@ export function App() {
   }, []);
 
   const connected = conn.status === "connected";
+
+  // After pair → land on Agents; drop obsolete "live" tab id if still selected.
+  useEffect(() => {
+    if (connected) {
+      setTab((t) => (t === "live" ? "agents" : t));
+    }
+  }, [connected]);
 
   // While Agents is open, re-list from engine so new spawns appear without leaving the tab.
   useEffect(() => {
@@ -426,103 +434,91 @@ export function App() {
 
   const panelPad = "flex flex-col gap-3 px-3.5 py-3";
 
-  return (
-    <div className="flex h-full min-h-screen flex-col bg-[var(--tc-bg)] text-[var(--tc-text)]">
-      <Tabs value={tab} onValueChange={setTab}>
-        {/* —— LIVE: connection status + pair + message —— */}
-        <TabsContent value="live" className={panelPad}>
+  // —— Unpaired: login / pair only (no bottom tabs) ——
+  if (!connected) {
+    return (
+      <div
+        className="flex h-full min-h-screen flex-col bg-[var(--tc-bg)] text-[var(--tc-text)]"
+        data-testid="companion-login"
+      >
+        <div className={`${panelPad} flex-1`}>
+          <div className="mb-1">
+            <h1 className="m-0 text-[15px] font-semibold tracking-tight text-[var(--tc-text)]">Sign in</h1>
+            <p className="m-0 mt-1 text-[var(--tc-text-xs)] text-[var(--tc-text-muted)]">
+              Pair this browser with a local Tachyon engine. In Control: Show pair code.
+            </p>
+          </div>
+
           {(error || info) && (
             <div className="space-y-1">
-              {error ? <p className="m-0 text-[var(--tc-text-sm)] text-[var(--tc-danger)]">{error}</p> : null}
+              {error ? (
+                <p className="m-0 text-[var(--tc-text-sm)] text-[var(--tc-danger)]" data-testid="pair-error">
+                  {error}
+                </p>
+              ) : null}
               {info ? <p className="m-0 text-[var(--tc-text-sm)] text-[var(--tc-success)]">{info}</p> : null}
             </div>
           )}
 
-          <Card
-            title="Connection"
-            hint={
-              stream === "live"
-                ? "Live sync on"
-                : stream === "connecting" || stream === "reconnecting"
-                  ? `Sync ${stream}…`
-                  : stream === "error"
-                    ? "Sync error — retrying"
-                    : undefined
-            }
-            footer={
-              connected ? (
-                <Button variant="danger" className="w-full" disabled={busy} onClick={() => void onUnpair()}>
-                  Unpair
-                </Button>
-              ) : undefined
-            }
-          >
-            <div className="mb-2.5 flex items-center justify-between gap-2">
-              <span className="text-[var(--tc-text-xs)] text-[var(--tc-text-muted)]">Status</span>
-              <Badge tone={statusTone(conn.status)} dot>
-                {conn.status}
-              </Badge>
+          <Card title="Pair with engine" hint="Command: Tachyon: Pair Companion (show code)">
+            <Field label="Base URL">
+              <Input
+                value={baseUrl}
+                onInput={(e) => setBaseUrl((e.target as HTMLInputElement).value)}
+                placeholder="http://127.0.0.1:41xxx"
+                disabled={busy}
+              />
+            </Field>
+            <Field label="Pair code">
+              <Input
+                value={pairCode}
+                onInput={(e) => setPairCode((e.target as HTMLInputElement).value)}
+                placeholder="XXXXXXXX"
+                maxLength={16}
+                spellcheck={false}
+                disabled={busy}
+              />
+            </Field>
+            {busy ? (
+              <p className="m-0 mb-2 text-[var(--tc-text-xs)] text-[var(--tc-text-muted)]">Pairing…</p>
+            ) : null}
+            <div className="flex flex-col gap-2">
+              <Button
+                className="w-full"
+                disabled={busy || !baseUrl.trim() || !pairCode.trim()}
+                onClick={() => void onPair()}
+              >
+                {busy ? "Pairing…" : "Pair"}
+              </Button>
+              <Button
+                variant="secondary"
+                className="w-full"
+                data-testid="pair-reset"
+                onClick={onResetPairForm}
+                disabled={!busy && !error}
+              >
+                {busy ? "Cancel" : "Clear error / retry"}
+              </Button>
             </div>
-            <dl className="m-0 grid gap-2 text-[var(--tc-text-sm)]">
-              <Row k="Engine" v={conn.engine?.label ?? "—"} />
-              <Row k="Base URL" v={(conn.baseUrl ?? baseUrl) || "—"} mono />
-              <Row k="Protocol" v={String(conn.protocolVersion ?? "—")} />
-              <Row k="Extension" v={conn.extensionVersion ?? "—"} />
-              <Row k="Sync" v={syncLabel} />
-            </dl>
           </Card>
 
-          {!connected ? (
-            <Card title="Pair with engine" hint="Command: Tachyon: Pair Companion (show code)">
-              <Field label="Base URL">
-                <Input
-                  value={baseUrl}
-                  onInput={(e) => setBaseUrl((e.target as HTMLInputElement).value)}
-                  placeholder="http://127.0.0.1:41xxx"
-                  disabled={busy}
-                />
-              </Field>
-              <Field label="Pair code">
-                <Input
-                  value={pairCode}
-                  onInput={(e) => setPairCode((e.target as HTMLInputElement).value)}
-                  placeholder="XXXXXXXX"
-                  maxLength={16}
-                  spellcheck={false}
-                  disabled={busy}
-                />
-              </Field>
-              {error ? (
-                <p className="m-0 mb-2 text-[var(--tc-text-sm)] text-[var(--tc-danger)]" data-testid="pair-error">
-                  {error}
-                </p>
-              ) : null}
-              {busy ? (
-                <p className="m-0 mb-2 text-[var(--tc-text-xs)] text-[var(--tc-text-muted)]">Pairing…</p>
-              ) : null}
-              <div className="flex flex-col gap-2">
-                <Button className="w-full" disabled={busy || !baseUrl.trim() || !pairCode.trim()} onClick={() => void onPair()}>
-                  {busy ? "Pairing…" : "Pair"}
-                </Button>
-                <Button
-                  variant="secondary"
-                  className="w-full"
-                  data-testid="pair-reset"
-                  onClick={onResetPairForm}
-                  disabled={!busy && !error}
-                >
-                  {busy ? "Cancel" : "Clear error / retry"}
-                </Button>
-              </div>
-            </Card>
-          ) : (
-            <p className="m-0 text-[var(--tc-text-xs)] text-[var(--tc-text-muted)]">
-              Message agents from the Agents tab.
+          <div className="mt-auto flex flex-col items-center gap-2 pt-4">
+            <ThemeSegment theme={theme} onChange={setThemePersist} />
+            <p className="m-0 text-center text-[10px] text-[var(--tc-text-muted)]">
+              {conn.status === "disconnected" ? "Unpaired" : conn.status}
+              {baseUrl || conn.baseUrl ? ` · ${(conn.baseUrl ?? baseUrl).replace(/^https?:\/\//, "")}` : ""}
             </p>
-          )}
-        </TabsContent>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-        {/* —— AGENTS: message active agents —— */}
+  // —— Paired: tabs (Agents first; Connection lives under Settings) ——
+  return (
+    <div className="flex h-full min-h-screen flex-col bg-[var(--tc-bg)] text-[var(--tc-text)]">
+      <Tabs value={tab} onValueChange={setTab}>
+        {/* —— AGENTS (default home) —— */}
         <TabsContent value="agents" className={panelPad}>
           {(error || info) && tab === "agents" ? (
             <div className="space-y-1">
@@ -531,43 +527,32 @@ export function App() {
             </div>
           ) : null}
 
-          {!connected ? (
-            <Card title="Agents" hint="Pair on Live first">
-              <p className="m-0 text-[var(--tc-text-sm)] text-[var(--tc-text-muted)]">
-                Not connected. Open Live and pair with the engine to list and message agents.
-              </p>
-              <Button variant="secondary" className="mt-3 w-full" onClick={() => setTab("live")}>
-                Go to Live
+          <Card
+            title="Message agent"
+            hint="Running agents only. Working → queued until idle. Pick an agent in the dropdown."
+            footer={
+              <Button className="w-full" disabled={busy} onClick={() => void onSend()}>
+                Send
               </Button>
-            </Card>
-          ) : (
-            <Card
-              title="Message agent"
-              hint="Running agents only. Working → queued until idle. Pick an agent in the dropdown."
-              footer={
-                <Button className="w-full" disabled={busy} onClick={() => void onSend()}>
-                  Send
-                </Button>
-              }
-            >
-              <Field label="Active agent">
-                <Select
-                  value={selectedAgent}
-                  onValueChange={setSelectedAgent}
-                  options={agentOptions.length ? agentOptions : [{ value: "", label: "No active agents" }]}
-                  placeholder="Select agent"
-                />
-              </Field>
-              <Field label="Message">
-                <Textarea
-                  value={message}
-                  onInput={(e) => setMessage((e.target as HTMLTextAreaElement).value)}
-                  placeholder="What should the agent do?"
-                  maxLength={2000}
-                />
-              </Field>
-            </Card>
-          )}
+            }
+          >
+            <Field label="Active agent">
+              <Select
+                value={selectedAgent}
+                onValueChange={setSelectedAgent}
+                options={agentOptions.length ? agentOptions : [{ value: "", label: "No active agents" }]}
+                placeholder="Select agent"
+              />
+            </Field>
+            <Field label="Message">
+              <Textarea
+                value={message}
+                onInput={(e) => setMessage((e.target as HTMLTextAreaElement).value)}
+                placeholder="What should the agent do?"
+                maxLength={2000}
+              />
+            </Field>
+          </Card>
         </TabsContent>
 
         {/* —— TAB: live DOM read + future actions —— */}
@@ -716,77 +701,66 @@ export function App() {
             </div>
           ) : null}
 
-          {!connected ? (
-            <Card title="Approvals" hint="Pair on Live first">
-              <p className="m-0 text-[var(--tc-text-sm)] text-[var(--tc-text-muted)]">
-                Not connected. Open Live and pair to see pending human approvals from the engine.
-              </p>
-              <Button variant="secondary" className="mt-3 w-full" onClick={() => setTab("live")}>
-                Go to Live
+          <Card
+            title="Pending approvals"
+            hint="Host-authoritative Accept / Deny · same ledger as Control"
+            footer={
+              <Button
+                variant="ghost"
+                className="w-full"
+                disabled={approvalsBusy}
+                onClick={() => void refreshApprovals()}
+              >
+                Refresh
               </Button>
-            </Card>
-          ) : (
-            <Card
-              title="Pending approvals"
-              hint="Host-authoritative Accept / Deny · same ledger as Control"
-              footer={
-                <Button
-                  variant="ghost"
-                  className="w-full"
-                  disabled={approvalsBusy}
-                  onClick={() => void refreshApprovals()}
+            }
+          >
+            <div className="flex flex-col gap-2">
+              {approvals.map((a) => (
+                <div
+                  key={a.id}
+                  className="rounded-[var(--tc-radius-sm)] border border-[var(--tc-border)] bg-[var(--tc-bg-muted)] p-2.5"
                 >
-                  Refresh
-                </Button>
-              }
-            >
-              <div className="flex flex-col gap-2">
-                {approvals.map((a) => (
-                  <div
-                    key={a.id}
-                    className="rounded-[var(--tc-radius-sm)] border border-[var(--tc-border)] bg-[var(--tc-bg-muted)] p-2.5"
-                  >
-                    <div className="text-[var(--tc-text-sm)] font-semibold text-[var(--tc-text)]">{a.reason}</div>
-                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--tc-text-muted)]">
-                      <span className="font-mono">{a.id}</span>
-                      {a.requester ? <span>{a.requester}</span> : null}
-                      <Badge tone="warning">{a.risk}</Badge>
-                    </div>
-                    <p className="m-0 mt-1.5 text-[var(--tc-text-xs)] text-[var(--tc-text-muted)]">
-                      Action: {a.proposedAction}
-                    </p>
-                    {a.exactPrompt ? (
-                      <pre className="m-0 mt-1.5 max-h-24 overflow-auto rounded-[var(--tc-radius-sm)] bg-[var(--tc-bg)] p-2 font-mono text-[10px] text-[var(--tc-text-muted)] whitespace-pre-wrap">
-                        {a.exactPrompt}
-                      </pre>
-                    ) : null}
-                    <div className="mt-2 flex gap-2">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        className="flex-1"
-                        disabled={approvalsBusy}
-                        onClick={() => void onResolveApproval(a.id, "denied")}
-                      >
-                        Deny
-                      </Button>
-                      <Button
-                        size="sm"
-                        className="flex-1"
-                        disabled={approvalsBusy}
-                        onClick={() => void onResolveApproval(a.id, "approved")}
-                      >
-                        Accept
-                      </Button>
-                    </div>
+                  <div className="text-[var(--tc-text-sm)] font-semibold text-[var(--tc-text)]">{a.reason}</div>
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--tc-text-muted)]">
+                    <span className="font-mono">{a.id}</span>
+                    {a.requester ? <span>{a.requester}</span> : null}
+                    <Badge tone="warning">{a.risk}</Badge>
                   </div>
-                ))}
-                {approvals.length === 0 ? (
-                  <p className="m-0 text-[var(--tc-text-xs)] text-[var(--tc-text-muted)]">No pending approvals.</p>
-                ) : null}
-              </div>
-            </Card>
-          )}
+                  <p className="m-0 mt-1.5 text-[var(--tc-text-xs)] text-[var(--tc-text-muted)]">
+                    Action: {a.proposedAction}
+                  </p>
+                  {a.exactPrompt ? (
+                    <pre className="m-0 mt-1.5 max-h-24 overflow-auto rounded-[var(--tc-radius-sm)] bg-[var(--tc-bg)] p-2 font-mono text-[10px] text-[var(--tc-text-muted)] whitespace-pre-wrap">
+                      {a.exactPrompt}
+                    </pre>
+                  ) : null}
+                  <div className="mt-2 flex gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="flex-1"
+                      disabled={approvalsBusy}
+                      onClick={() => void onResolveApproval(a.id, "denied")}
+                    >
+                      Deny
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="flex-1"
+                      disabled={approvalsBusy}
+                      onClick={() => void onResolveApproval(a.id, "approved")}
+                    >
+                      Accept
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              {approvals.length === 0 ? (
+                <p className="m-0 text-[var(--tc-text-xs)] text-[var(--tc-text-muted)]">No pending approvals.</p>
+              ) : null}
+            </div>
+          </Card>
         </TabsContent>
 
         {/* —— AUDIT —— */}
@@ -799,7 +773,7 @@ export function App() {
           </Card>
         </TabsContent>
 
-        {/* —— SETTINGS —— */}
+        {/* —— SETTINGS: connection + theme + trust —— */}
         <TabsContent value="settings" className={panelPad}>
           {(error || info) && tab === "settings" ? (
             <div className="space-y-1">
@@ -808,52 +782,68 @@ export function App() {
             </div>
           ) : null}
 
-            <Card title="Theme">
-              <div className="flex flex-col gap-2">
-                {(["system", "light", "dark"] as Theme[]).map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setThemePersist(t)}
-                    className={
-                      "flex items-center justify-between rounded-[var(--tc-radius-sm)] border px-3 py-2 text-left text-[var(--tc-text-sm)] " +
-                      (theme === t
-                        ? "border-[var(--tc-accent)] bg-[var(--tc-bg-muted)] font-semibold"
-                        : "border-[var(--tc-border)] bg-transparent text-[var(--tc-text-muted)]")
-                    }
-                  >
-                    <span className="capitalize">{t}</span>
-                    {theme === t ? <Badge tone="info">active</Badge> : null}
-                  </button>
-                ))}
-              </div>
-            </Card>
+          <Card
+            title="Connection"
+            hint={
+              stream === "live"
+                ? "Live sync on"
+                : stream === "connecting" || stream === "reconnecting"
+                  ? `Sync ${stream}…`
+                  : stream === "error"
+                    ? "Sync error — retrying"
+                    : undefined
+            }
+            footer={
+              <Button variant="danger" className="w-full" disabled={busy} onClick={() => void onUnpair()}>
+                Unpair
+              </Button>
+            }
+          >
+            <div className="mb-2.5 flex items-center justify-between gap-2">
+              <span className="text-[var(--tc-text-xs)] text-[var(--tc-text-muted)]">Status</span>
+              <Badge tone={statusTone(conn.status)} dot>
+                {conn.status}
+              </Badge>
+            </div>
+            <dl className="m-0 grid gap-2 text-[var(--tc-text-sm)]">
+              <Row k="Engine" v={conn.engine?.label ?? "—"} />
+              <Row k="Base URL" v={(conn.baseUrl ?? baseUrl) || "—"} mono />
+              <Row k="Protocol" v={String(conn.protocolVersion ?? "—")} />
+              <Row k="Extension" v={conn.extensionVersion ?? "—"} />
+              <Row k="Sync" v={syncLabel} />
+            </dl>
+          </Card>
 
-            <Card title="Agent tab access" hint="Trust — t-e05d2d · enables user_browser_snapshot">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-[var(--tc-text-sm)] font-semibold">Allow agent tab reads</div>
-                  <p className="m-0 text-[10px] text-[var(--tc-text-muted)]">
-                    When on, the agent may read/act/screenshot your active tab (no cookies; passwords redacted).
-                    Chrome will ask for access on all sites — required for screenshots (`captureVisibleTab`).
-                  </p>
-                  <p className="m-0 mt-1 text-[10px] text-[var(--tc-text-muted)]">
-                    Host access (&lt;all_urls&gt;): {hostAccess ? "granted" : "not granted"}
-                  </p>
-                </div>
-                <Switch
-                  checked={agentTabRead}
-                  disabled={busy}
-                  onCheckedChange={(v) => void onToggleAgentTabRead(v)}
-                />
-              </div>
-            </Card>
+          <Card title="Appearance">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[var(--tc-text-sm)] text-[var(--tc-text-muted)]">Theme</span>
+              <ThemeSegment theme={theme} onChange={setThemePersist} />
+            </div>
+          </Card>
 
+          <Card title="Agent tab access" hint="Trust — t-e05d2d · enables user_browser_snapshot">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[var(--tc-text-sm)] font-semibold">Allow agent tab reads</div>
+                <p className="m-0 text-[10px] text-[var(--tc-text-muted)]">
+                  When on, the agent may read/act/screenshot your active tab (no cookies; passwords redacted).
+                  Chrome will ask for access on all sites — required for screenshots (`captureVisibleTab`).
+                </p>
+                <p className="m-0 mt-1 text-[10px] text-[var(--tc-text-muted)]">
+                  Host access (&lt;all_urls&gt;): {hostAccess ? "granted" : "not granted"}
+                </p>
+              </div>
+              <Switch
+                checked={agentTabRead}
+                disabled={busy}
+                onCheckedChange={(v) => void onToggleAgentTabRead(v)}
+              />
+            </div>
+          </Card>
         </TabsContent>
 
-        {/* Mobile bottom nav */}
+        {/* Mobile bottom nav — Agents first; no Connection tab */}
         <TabsList>
-          <TabsTrigger value="live" icon={<IconBolt />} hint="Live" />
           <TabsTrigger value="agents" icon={<IconUsers />} hint="Agents" />
           <TabsTrigger value="tab" icon={<IconWindow />} hint="Tab" />
           <TabsTrigger value="approvals" icon={<IconShield />} hint="Approvals" />
@@ -861,6 +851,54 @@ export function App() {
           <TabsTrigger value="settings" icon={<IconGear />} hint="Settings" />
         </TabsList>
       </Tabs>
+    </div>
+  );
+}
+
+/** Compact icon-only theme radios (system / light / dark) — no text labels. */
+function ThemeSegment({
+  theme,
+  onChange,
+}: {
+  theme: Theme;
+  onChange: (t: Theme) => void;
+}) {
+  const items: { id: Theme; hint: string; icon: ComponentChildren }[] = [
+    { id: "system", hint: "System", icon: <IconMonitor /> },
+    { id: "light", hint: "Light", icon: <IconSun /> },
+    { id: "dark", hint: "Dark", icon: <IconMoon /> },
+  ];
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Theme"
+      className="inline-flex rounded-full border border-[var(--tc-border)] bg-[var(--tc-bg-muted)] p-0.5"
+      data-testid="theme-segment"
+    >
+      {items.map((item) => {
+        const active = theme === item.id;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            aria-label={item.hint}
+            title={item.hint}
+            onClick={() => onChange(item.id)}
+            className={
+              "flex h-8 w-8 items-center justify-center rounded-full transition-colors " +
+              (active
+                ? "bg-[var(--tc-bg-elevated)] text-[var(--tc-accent)] shadow-sm"
+                : "text-[var(--tc-text-muted)] hover:text-[var(--tc-text)]")
+            }
+          >
+            <span className="flex h-4 w-4 items-center justify-center [&_svg]:h-4 [&_svg]:w-4" aria-hidden>
+              {item.icon}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -886,14 +924,6 @@ function iconProps(children: ComponentChildren) {
     >
       {children}
     </svg>
-  );
-}
-
-function IconBolt() {
-  return iconProps(
-    <>
-      <path d="M13 2 3 14h8l-1 8 10-12h-8l1-8z" />
-    </>,
   );
 }
 
@@ -939,6 +969,32 @@ function IconGear() {
     <>
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </>,
+  );
+}
+
+function IconMonitor() {
+  return iconProps(
+    <>
+      <rect x="2" y="3" width="20" height="14" rx="2" />
+      <path d="M8 21h8M12 17v4" />
+    </>,
+  );
+}
+
+function IconSun() {
+  return iconProps(
+    <>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+    </>,
+  );
+}
+
+function IconMoon() {
+  return iconProps(
+    <>
+      <path d="M21 14.5A8.5 8.5 0 1 1 9.5 3a7 7 0 0 0 11.5 11.5z" />
     </>,
   );
 }
