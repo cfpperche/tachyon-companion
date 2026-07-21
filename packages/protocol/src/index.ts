@@ -318,6 +318,46 @@ export type CompanionTabCommand =
       ref?: string;
       selector?: string;
       checked: boolean;
+    } & CompanionTabTarget)
+  | ({
+      id: string;
+      kind: "drag";
+      at: string;
+      sourceRef?: string;
+      sourceSelector?: string;
+      targetRef?: string;
+      targetSelector?: string;
+    } & CompanionTabTarget)
+  | ({
+      id: string;
+      kind: "upload";
+      at: string;
+      ref?: string;
+      selector?: string;
+      files: Array<{ name: string; mimeType: string; base64: string }>;
+    } & CompanionTabTarget)
+  | ({
+      id: string;
+      kind: "download";
+      at: string;
+      ref?: string;
+      selector?: string;
+      timeoutMs?: number;
+    } & CompanionTabTarget)
+  | ({
+      id: string;
+      kind: "network";
+      at: string;
+      limit?: number;
+      urlContains?: string;
+    } & CompanionTabTarget)
+  | ({ id: string; kind: "list_frames"; at: string } & CompanionTabTarget)
+  | ({
+      id: string;
+      kind: "dialog";
+      at: string;
+      action: "accept" | "dismiss" | "read";
+      text?: string;
     } & CompanionTabTarget);
 
 export type CompanionTabErrorCode =
@@ -430,7 +470,10 @@ export type CompanionTabResult =
         | "tab_close"
         | "hover"
         | "select_option"
-        | "check";
+        | "check"
+        | "drag"
+        | "upload"
+        | "dialog";
       tabId: string;
       documentToken?: string;
       url?: string;
@@ -470,6 +513,46 @@ export type CompanionTabResult =
         selector?: string;
         text: string;
         tag?: string;
+      }>;
+    }
+  | {
+      ok: true;
+      id: string;
+      kind: "download";
+      tabId: string;
+      documentToken?: string;
+      filename: string;
+      path: string;
+      state: string;
+      mime?: string;
+      byteLength?: number;
+    }
+  | {
+      ok: true;
+      id: string;
+      kind: "network";
+      tabId: string;
+      documentToken?: string;
+      entries: Array<{
+        url: string;
+        method: string;
+        statusCode?: number;
+        type?: string;
+        error?: string;
+        at: string;
+      }>;
+    }
+  | {
+      ok: true;
+      id: string;
+      kind: "list_frames";
+      tabId: string;
+      documentToken?: string;
+      frames: Array<{
+        frameId: number;
+        parentFrameId: number;
+        url: string;
+        errorOccurred?: boolean;
       }>;
     }
   | {

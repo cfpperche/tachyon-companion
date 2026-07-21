@@ -38,6 +38,34 @@ export type PageActResult =
 const MAX_SELECTOR = 500;
 const MAX_TEXT = 4000;
 
+/** Deep query: light DOM + open shadow roots (breadth-first). */
+function deepQuery(selector: string, root: ParentNode = document): Element | null {
+  try {
+    const direct = root.querySelector(selector);
+    if (direct) return direct;
+  } catch {
+    return null;
+  }
+  const walk = (node: ParentNode): Element | null => {
+    const els = node.querySelectorAll?.("*") ?? [];
+    for (const el of Array.from(els)) {
+      const sr = (el as Element).shadowRoot;
+      if (sr) {
+        try {
+          const hit = sr.querySelector(selector);
+          if (hit) return hit;
+        } catch {
+          /* invalid in this root */
+        }
+        const deeper = walk(sr);
+        if (deeper) return deeper;
+      }
+    }
+    return null;
+  };
+  return walk(root);
+}
+
 function resolveOne(selector: string): { el?: Element; error?: PageActResult } {
   const sel = selector.trim();
   if (!sel || sel.length > MAX_SELECTOR) {
@@ -45,9 +73,9 @@ function resolveOne(selector: string): { el?: Element; error?: PageActResult } {
       error: { ok: false, code: "unknown", message: "Invalid or empty selector." },
     };
   }
-  // SDD 420: prefer stable @eN refs stamped by the last snapshot.
+  // SDD 420: prefer stable @eN refs stamped by the last snapshot (incl. open shadow).
   if (/^@e\d+$/i.test(sel)) {
-    const byRef = document.querySelector(`[data-tc-ref="${sel}"]`);
+    const byRef = deepQuery(`[data-tc-ref="${sel}"]`);
     if (!byRef) {
       return {
         error: {
@@ -61,7 +89,7 @@ function resolveOne(selector: string): { el?: Element; error?: PageActResult } {
   }
   let el: Element | null;
   try {
-    el = document.querySelector(sel);
+    el = deepQuery(sel);
   } catch {
     return {
       error: { ok: false, code: "unknown", message: `Invalid CSS selector: ${sel}` },

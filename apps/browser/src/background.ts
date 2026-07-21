@@ -19,7 +19,11 @@ import {
   readActiveTabConsole,
   runActiveTabAction,
 } from "./tabBridge.js";
+import { installNetworkLog, listNetworkForTab } from "./networkLog.js";
 import { readTrust } from "./trust.js";
+
+// Best-effort network ring buffer for user_browser_network (no secrets).
+installNetworkLog();
 
 const STORAGE_KEY = "tachyonCompanion.v1";
 const LIVE_KEY = "tachyonCompanion.live.v1";
@@ -353,6 +357,10 @@ async function fulfillTabCommand(client: CompanionClient, command: CompanionTabC
     const shot = await captureActiveTabScreenshot({
       format: command.format,
       quality: command.quality,
+      chromeTabId,
+      scope: command.scope,
+      ref: command.ref,
+      selector: command.selector,
     });
     // captureVisibleTab is window-scoped; still bind metadata to target tab
     const body: CompanionTabResult = shot.ok
@@ -1081,6 +1089,313 @@ async function fulfillTabCommand(client: CompanionClient, command: CompanionTabC
         ok: true,
         id: command.id,
         kind: "check",
+        tabId,
+        documentToken,
+        detail: result.detail,
+      });
+    } catch (e) {
+      await client.postTabResult({
+        ok: false,
+        id: command.id,
+        code: "unknown",
+        message: e instanceof Error ? e.message : String(e),
+        tabId,
+      });
+    }
+    return;
+  }
+
+  // ---- SDD 420 P1 residual: drag / upload / download / network / frames / dialog ----
+  if (command.kind === "drag") {
+    const src = (command.sourceRef?.trim() || command.sourceSelector?.trim() || "").trim();
+    const dst = (command.targetRef?.trim() || command.targetSelector?.trim() || "").trim();
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: chromeTabId },
+        func: (sourceSel: string, targetSel: string) => {
+          const pick = (s: string) =>
+            /^@e\d+$/i.test(s)
+              ? document.querySelector(`[data-tc-ref="${s}"]`)
+              : document.querySelector(s);
+          const a = pick(sourceSel);
+          const b = pick(targetSel);
+          if (!(a instanceof HTMLElement) || !(b instanceof HTMLElement)) {
+            throw new Error("source or target not found");
+          }
+          const dt = new DataTransfer();
+          const fire = (el: Element, type: string) =>
+            el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt }));
+          fire(a, "dragstart");
+          fire(b, "dragenter");
+          fire(b, "dragover");
+          fire(b, "drop");
+          fire(a, "dragend");
+        },
+        args: [src, dst],
+      });
+      await client.postTabResult({
+        ok: true,
+        id: command.id,
+        kind: "drag",
+        tabId,
+        documentToken,
+        detail: `${src}→${dst}`,
+      });
+    } catch (e) {
+      await client.postTabResult({
+        ok: false,
+        id: command.id,
+        code: "unknown",
+        message: e instanceof Error ? e.message : String(e),
+        tabId,
+      });
+    }
+    return;
+  }
+
+  if (command.kind === "upload") {
+    const sel = (command.ref?.trim() || command.selector?.trim() || "").trim();
+    const files = command.files ?? [];
+    if (!files.length) {
+      await client.postTabResult({
+        ok: false,
+        id: command.id,
+        code: "unknown",
+        message: "No files provided",
+        tabId,
+      });
+      return;
+    }
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: chromeTabId },
+        func: (
+          selector: string,
+          payload: Array<{ name: string; mimeType: string; base64: string }>,
+        ) => {
+          const el =
+            /^@e\d+$/i.test(selector)
+              ? document.querySelector(`[data-tc-ref="${selector}"]`)
+              : document.querySelector(selector);
+          if (!(el instanceof HTMLInputElement) || el.type !== "file") {
+            throw new Error("Target is not input[type=file]");
+          }
+          const list = new DataTransfer();
+          for (const f of payload) {
+            const bin = atob(f.base64);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            list.items.add(new File([bytes], f.name, { type: f.mimeType || "application/octet-stream" }));
+          }
+          el.files = list.files;
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+        },
+        args: [sel, files],
+      });
+      await client.postTabResult({
+        ok: true,
+        id: command.id,
+        kind: "upload",
+        tabId,
+        documentToken,
+        detail: files.map((f) => f.name).join(","),
+      });
+    } catch (e) {
+      await client.postTabResult({
+        ok: false,
+        id: command.id,
+        code: "unknown",
+        message: e instanceof Error ? e.message : String(e),
+        tabId,
+      });
+    }
+    return;
+  }
+
+  if (command.kind === "download") {
+    const sel = (command.ref?.trim() || command.selector?.trim() || "").trim();
+    const budget = Math.min(command.timeoutMs ?? 20_000, 60_000);
+    try {
+      const startedAt = Date.now();
+      const before = await chrome.downloads.search({ orderBy: ["-startTime"], limit: 5 });
+      const beforeIds = new Set(before.map((d) => d.id));
+      if (sel) {
+        await chrome.scripting.executeScript({
+          target: { tabId: chromeTabId },
+          func: (selector: string) => {
+            const el =
+              /^@e\d+$/i.test(selector)
+                ? document.querySelector(`[data-tc-ref="${selector}"]`)
+                : document.querySelector(selector);
+            if (!(el instanceof HTMLElement)) throw new Error(`No element: ${selector}`);
+            el.click();
+          },
+          args: [sel],
+        });
+      }
+      let found: chrome.downloads.DownloadItem | undefined;
+      while (Date.now() - startedAt < budget) {
+        const items = await chrome.downloads.search({ orderBy: ["-startTime"], limit: 10 });
+        found = items.find((d) => !beforeIds.has(d.id) && d.state !== "interrupted");
+        if (found && (found.state === "complete" || found.filename)) {
+          if (found.state === "complete" || found.exists) break;
+        }
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      if (!found) {
+        await client.postTabResult({
+          ok: false,
+          id: command.id,
+          code: "timeout",
+          message: "No download observed in time",
+          tabId,
+        });
+        return;
+      }
+      // Wait a bit more for complete
+      let item = found;
+      const waitEnd = Date.now() + Math.max(0, budget - (Date.now() - startedAt));
+      while (item.state !== "complete" && Date.now() < waitEnd) {
+        await new Promise((r) => setTimeout(r, 200));
+        const [fresh] = await chrome.downloads.search({ id: item.id });
+        if (fresh) item = fresh;
+        if (item.state === "interrupted") break;
+      }
+      await client.postTabResult({
+        ok: true,
+        id: command.id,
+        kind: "download",
+        tabId,
+        documentToken,
+        filename: item.filename?.split(/[/\\]/).pop() ?? item.filename ?? "download",
+        path: item.filename ?? "",
+        state: item.state ?? "unknown",
+        mime: item.mime,
+        byteLength: item.fileSize && item.fileSize > 0 ? item.fileSize : undefined,
+      });
+    } catch (e) {
+      await client.postTabResult({
+        ok: false,
+        id: command.id,
+        code: "unknown",
+        message: e instanceof Error ? e.message : String(e),
+        tabId,
+      });
+    }
+    return;
+  }
+
+  if (command.kind === "network") {
+    const entries = listNetworkForTab(chromeTabId, {
+      limit: command.limit,
+      urlContains: command.urlContains,
+    }).map(({ url, method, statusCode, type, error, at }) => ({
+      url,
+      method,
+      statusCode,
+      type,
+      error,
+      at,
+    }));
+    await client.postTabResult({
+      ok: true,
+      id: command.id,
+      kind: "network",
+      tabId,
+      documentToken,
+      entries,
+    });
+    return;
+  }
+
+  if (command.kind === "list_frames") {
+    try {
+      const frames = await chrome.webNavigation.getAllFrames({ tabId: chromeTabId });
+      await client.postTabResult({
+        ok: true,
+        id: command.id,
+        kind: "list_frames",
+        tabId,
+        documentToken,
+        frames: (frames ?? []).map((f) => ({
+          frameId: f.frameId,
+          parentFrameId: f.parentFrameId,
+          url: f.url,
+          errorOccurred: f.errorOccurred,
+        })),
+      });
+    } catch (e) {
+      await client.postTabResult({
+        ok: false,
+        id: command.id,
+        code: "unknown",
+        message: e instanceof Error ? e.message : String(e),
+        tabId,
+      });
+    }
+    return;
+  }
+
+  if (command.kind === "dialog") {
+    try {
+      const [{ result }] = await chrome.scripting.executeScript({
+        target: { tabId: chromeTabId },
+        func: (action: string, text: string | undefined) => {
+          const dlg =
+            document.querySelector("dialog[open]") ||
+            document.querySelector('[role="dialog"][aria-modal="true"]') ||
+            document.querySelector('[role="alertdialog"]');
+          if (!dlg) return { ok: false as const, message: "No open dialog found" };
+          if (action === "read") {
+            return {
+              ok: true as const,
+              detail: ((dlg as HTMLElement).innerText || "").slice(0, 2000),
+            };
+          }
+          if (action === "accept") {
+            const btn =
+              dlg.querySelector('[type="submit"]') ||
+              dlg.querySelector("button.primary, button[data-action='ok'], button[data-action='confirm']") ||
+              Array.from(dlg.querySelectorAll("button")).find((b) =>
+                /ok|confirm|accept|yes|sim|enviar/i.test(b.textContent || ""),
+              );
+            if (text && dlg instanceof HTMLDialogElement === false) {
+              const input = dlg.querySelector("input, textarea");
+              if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
+                input.value = text;
+                input.dispatchEvent(new Event("input", { bubbles: true }));
+              }
+            }
+            if (btn instanceof HTMLElement) btn.click();
+            else if (dlg instanceof HTMLDialogElement) dlg.close("accept");
+            return { ok: true as const, detail: "accept" };
+          }
+          // dismiss
+          const cancel =
+            Array.from(dlg.querySelectorAll("button")).find((b) =>
+              /cancel|close|dismiss|no|não|fechar/i.test(b.textContent || ""),
+            ) || dlg.querySelector('[aria-label="Close"], .close');
+          if (cancel instanceof HTMLElement) cancel.click();
+          else if (dlg instanceof HTMLDialogElement) dlg.close();
+          return { ok: true as const, detail: "dismiss" };
+        },
+        args: [command.action, command.text],
+      });
+      if (!result?.ok) {
+        await client.postTabResult({
+          ok: false,
+          id: command.id,
+          code: "not_found",
+          message: result?.message ?? "dialog failed",
+          tabId,
+        });
+        return;
+      }
+      await client.postTabResult({
+        ok: true,
+        id: command.id,
+        kind: "dialog",
         tabId,
         documentToken,
         detail: result.detail,

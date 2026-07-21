@@ -147,14 +147,18 @@ export type ScreenshotResponse =
       url?: string;
     };
 
-/** First-person screenshot of the active tab (what the human sees). */
+/** First-person screenshot of a tab (defaults to active). Supports element crop + limited full_page stitch. */
 export async function captureActiveTabScreenshot(opts?: {
   format?: "jpeg" | "png";
   quality?: number;
+  chromeTabId?: number;
+  scope?: "viewport" | "full_page" | "element";
+  ref?: string;
+  selector?: string;
 }): Promise<ScreenshotResponse> {
   let tab: chrome.tabs.Tab | undefined;
   try {
-    tab = await activeTab();
+    tab = opts?.chromeTabId != null ? await tabByChromeId(opts.chromeTabId) : await activeTab();
   } catch (e) {
     return { ok: false, code: "unknown", message: e instanceof Error ? e.message : String(e) };
   }
@@ -172,18 +176,71 @@ export async function captureActiveTabScreenshot(opts?: {
 
   const format = opts?.format === "png" ? "png" : "jpeg";
   const quality = Math.min(100, Math.max(10, opts?.quality ?? 70));
+  const scope = opts?.scope ?? "viewport";
+  const chromeTabId = tab.id;
 
   try {
-    // Prefer the tab's window so we capture the human's visible surface.
-    const windowId = tab.windowId;
-    const dataUrl = await chrome.tabs.captureVisibleTab(windowId, {
+    // Focus target tab so captureVisibleTab hits the right surface.
+    await chrome.tabs.update(chromeTabId, { active: true });
+    await new Promise((r) => setTimeout(r, 80));
+
+    if (scope === "element") {
+      const sel = (opts?.ref?.trim() || opts?.selector?.trim() || "").trim();
+      if (!sel) {
+        return { ok: false, code: "unknown", message: "scope=element requires ref or selector", url: tab.url };
+      }
+      const [{ result: rect }] = await chrome.scripting.executeScript({
+        target: { tabId: chromeTabId },
+        func: (selector: string) => {
+          const el =
+            /^@e\d+$/i.test(selector)
+              ? document.querySelector(`[data-tc-ref="${selector}"]`)
+              : document.querySelector(selector);
+          if (!(el instanceof Element)) return null;
+          (el as HTMLElement).scrollIntoView({ block: "center", inline: "nearest" });
+          const r = el.getBoundingClientRect();
+          const dpr = window.devicePixelRatio || 1;
+          return {
+            x: Math.max(0, r.x * dpr),
+            y: Math.max(0, r.y * dpr),
+            w: Math.max(1, r.width * dpr),
+            h: Math.max(1, r.height * dpr),
+            vw: window.innerWidth * dpr,
+            vh: window.innerHeight * dpr,
+          };
+        },
+        args: [sel],
+      });
+      await new Promise((r) => setTimeout(r, 60));
+      if (!rect) {
+        return { ok: false, code: "unknown", message: `Element not found for screenshot: ${sel}`, url: tab.url };
+      }
+      const full = await captureVisible(tab.windowId, format, quality);
+      if (!full.ok) return { ...full, url: tab.url };
+      const cropped = await cropDataUrl(full.dataUrl, rect, format, quality);
+      return {
+        ok: true,
+        url: tab.url ?? "",
+        title: tab.title ?? "",
+        capturedAt: new Date().toISOString(),
+        dataUrl: cropped.dataUrl,
+        byteLength: cropped.byteLength,
+        mimeType: format === "png" ? "image/png" : "image/jpeg",
+      };
+    }
+
+    if (scope === "full_page") {
+      const stitched = await captureFullPage(chromeTabId, tab.windowId, format, quality, tab);
+      return stitched;
+    }
+
+    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
       format,
       ...(format === "jpeg" ? { quality } : {}),
     });
     if (!dataUrl || typeof dataUrl !== "string") {
       return { ok: false, code: "unknown", message: "captureVisibleTab returned empty.", url: tab.url };
     }
-    // Approximate byte length of base64 payload (without data: prefix).
     const b64 = dataUrl.includes(",") ? dataUrl.split(",")[1]! : dataUrl;
     const byteLength = Math.floor((b64.length * 3) / 4);
     return {
@@ -203,6 +260,151 @@ export async function captureActiveTabScreenshot(opts?: {
         e instanceof Error
           ? e.message
           : "Screenshot failed. Ensure agent tab host access is granted and a normal http(s) tab is focused.",
+      url: tab.url,
+    };
+  }
+}
+
+async function captureVisible(
+  windowId: number,
+  format: "jpeg" | "png",
+  quality: number,
+): Promise<{ ok: true; dataUrl: string } | { ok: false; code: "unknown"; message: string }> {
+  const dataUrl = await chrome.tabs.captureVisibleTab(windowId, {
+    format,
+    ...(format === "jpeg" ? { quality } : {}),
+  });
+  if (!dataUrl) return { ok: false, code: "unknown", message: "captureVisibleTab empty" };
+  return { ok: true, dataUrl };
+}
+
+async function cropDataUrl(
+  dataUrl: string,
+  rect: { x: number; y: number; w: number; h: number; vw: number; vh: number },
+  format: "jpeg" | "png",
+  quality: number,
+): Promise<{ dataUrl: string; byteLength: number }> {
+  const res = await fetch(dataUrl);
+  const blob = await res.blob();
+  const bmp = await createImageBitmap(blob);
+  const scaleX = bmp.width / rect.vw;
+  const scaleY = bmp.height / rect.vh;
+  const sx = Math.min(bmp.width - 1, Math.max(0, Math.floor(rect.x * scaleX)));
+  const sy = Math.min(bmp.height - 1, Math.max(0, Math.floor(rect.y * scaleY)));
+  const sw = Math.min(bmp.width - sx, Math.max(1, Math.floor(rect.w * scaleX)));
+  const sh = Math.min(bmp.height - sy, Math.max(1, Math.floor(rect.h * scaleY)));
+  const canvas = new OffscreenCanvas(sw, sh);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("OffscreenCanvas 2d unavailable");
+  ctx.drawImage(bmp, sx, sy, sw, sh, 0, 0, sw, sh);
+  const out = await canvas.convertToBlob({
+    type: format === "png" ? "image/png" : "image/jpeg",
+    quality: quality / 100,
+  });
+  const ab = await out.arrayBuffer();
+  const b64 = bytesToBase64(new Uint8Array(ab));
+  const mime = format === "png" ? "image/png" : "image/jpeg";
+  return { dataUrl: `data:${mime};base64,${b64}`, byteLength: ab.byteLength };
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+/** Stitch up to ~4 viewport tiles (cap height) — best-effort full page. */
+async function captureFullPage(
+  chromeTabId: number,
+  windowId: number,
+  format: "jpeg" | "png",
+  quality: number,
+  tab: chrome.tabs.Tab,
+): Promise<ScreenshotResponse> {
+  const [{ result: metrics }] = await chrome.scripting.executeScript({
+    target: { tabId: chromeTabId },
+    func: () => ({
+      scrollY: window.scrollY,
+      innerH: window.innerHeight,
+      scrollH: Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0),
+      dpr: window.devicePixelRatio || 1,
+    }),
+  });
+  if (!metrics) {
+    return { ok: false, code: "unknown", message: "Could not measure page for full_page", url: tab.url };
+  }
+  const maxTiles = 4;
+  const tiles: ImageBitmap[] = [];
+  const step = metrics.innerH;
+  const total = Math.min(metrics.scrollH, step * maxTiles);
+  try {
+    for (let y = 0; y < total; y += step) {
+      await chrome.scripting.executeScript({
+        target: { tabId: chromeTabId },
+        func: (yy: number) => window.scrollTo(0, yy),
+        args: [y],
+      });
+      await new Promise((r) => setTimeout(r, 120));
+      const cap = await captureVisible(windowId, format, quality);
+      if (!cap.ok) {
+        return { ok: false, code: "unknown", message: cap.message, url: tab.url };
+      }
+      const res = await fetch(cap.dataUrl);
+      tiles.push(await createImageBitmap(await res.blob()));
+    }
+    if (tiles.length === 0) {
+      return { ok: false, code: "unknown", message: "No tiles captured", url: tab.url };
+    }
+    const w = tiles[0]!.width;
+    const h = tiles.reduce((acc, t) => acc + t.height, 0);
+    const canvas = new OffscreenCanvas(w, Math.min(h, w * 8));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("OffscreenCanvas 2d unavailable");
+    let dy = 0;
+    for (const t of tiles) {
+      ctx.drawImage(t, 0, dy);
+      dy += t.height;
+      if (dy >= canvas.height) break;
+    }
+    const out = await canvas.convertToBlob({
+      type: format === "png" ? "image/png" : "image/jpeg",
+      quality: quality / 100,
+    });
+    const ab = await out.arrayBuffer();
+    // restore scroll
+    await chrome.scripting.executeScript({
+      target: { tabId: chromeTabId },
+      func: (yy: number) => window.scrollTo(0, yy),
+      args: [metrics.scrollY],
+    });
+    const b64 = bytesToBase64(new Uint8Array(ab));
+    const mime = format === "png" ? "image/png" : "image/jpeg";
+    return {
+      ok: true,
+      url: tab.url ?? "",
+      title: tab.title ?? "",
+      capturedAt: new Date().toISOString(),
+      dataUrl: `data:${mime};base64,${b64}`,
+      byteLength: ab.byteLength,
+      mimeType: mime,
+    };
+  } catch (e) {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: chromeTabId },
+        func: (yy: number) => window.scrollTo(0, yy),
+        args: [metrics.scrollY],
+      });
+    } catch {
+      /* ignore */
+    }
+    return {
+      ok: false,
+      code: "unknown",
+      message: e instanceof Error ? e.message : String(e),
       url: tab.url,
     };
   }
