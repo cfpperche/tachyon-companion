@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import {
   Badge,
@@ -70,7 +70,7 @@ export function App() {
   const [info, setInfo] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
 
-  // Tab control (read live; actions still prototype)
+  // Tab control (live content-script actions when agent tab access is on)
   const [tabUrl, setTabUrl] = useState("");
   const [tabTitle, setTabTitle] = useState("");
   const [snapshotPreview, setSnapshotPreview] = useState(
@@ -80,8 +80,8 @@ export function App() {
   const [screenshotPreview, setScreenshotPreview] = useState<string>("");
   const [tabBusy, setTabBusy] = useState(false);
   const [tabError, setTabError] = useState<string | undefined>();
-  const [fillSelector, setFillSelector] = useState("input[name=email]");
-  const [fillValue, setFillValue] = useState("user@example.com");
+  const [fillSelector, setFillSelector] = useState("");
+  const [fillValue, setFillValue] = useState("");
   const [agentTabRead, setAgentTabRead] = useState(false);
   const [hostAccess, setHostAccess] = useState(false);
   const [approvals, setApprovals] = useState<ApprovalSummary[]>([]);
@@ -145,7 +145,6 @@ export function App() {
   }, []);
 
   const connected = conn.status === "connected";
-  const displayAgents = useMemo(() => agents, [agents]);
 
   // While Agents is open, re-list from engine so new spawns appear without leaving the tab.
   useEffect(() => {
@@ -173,7 +172,7 @@ export function App() {
     };
   }, [tab, connected]);
 
-  const agentOptions = displayAgents.map((a) => ({
+  const agentOptions = agents.map((a) => ({
     value: a.name,
     label: `${a.name} · ${a.attention}${a.composerOccupied ? " · composer" : ""}`,
   }));
@@ -675,12 +674,6 @@ export function App() {
             </div>
           </Card>
 
-          <Card title="Escalation" hint="Agent tools: user_browser_eval · user_browser_console">
-            <p className="m-0 text-[var(--tc-text-xs)] text-[var(--tc-text-muted)]">
-              MAIN-world eval and console capture are available to the paired agent when tab access is
-              on. Full CDP debugger remains a later escalation.
-            </p>
-          </Card>
         </TabsContent>
 
         {/* —— APPROVALS —— */}
@@ -770,25 +763,13 @@ export function App() {
 
         {/* —— AUDIT —— */}
         <TabsContent value="audit" className={panelPad}>
-            <Card title="Activity" hint="What Companion did on this machine">
-              <ul className="m-0 list-none space-y-2 p-0">
-                {[{ t: "—", kind: "info", text: "No events yet" }].map((e, i) => (
-                  <li
-                    key={i}
-                    className="flex gap-2 border-b border-[var(--tc-border)] pb-2 last:border-0 last:pb-0"
-                  >
-                    <span className="w-10 shrink-0 font-mono text-[10px] text-[var(--tc-text-muted)]">{e.t}</span>
-                    <div className="min-w-0">
-                      <Badge tone={e.kind === "action" ? "working" : e.kind === "pair" ? "success" : "neutral"}>
-                        {e.kind}
-                      </Badge>
-                      <p className="m-0 mt-1 text-[var(--tc-text-xs)] text-[var(--tc-text)]">{e.text}</p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          </TabsContent>
+          <Card title="Activity" hint="Local log of Companion actions on this machine (coming soon)">
+            <p className="m-0 text-[var(--tc-text-sm)] text-[var(--tc-text-muted)]">
+              No activity recorded yet. Pair, messages, and tab actions will show up here when the
+              local audit trail is wired.
+            </p>
+          </Card>
+        </TabsContent>
 
         {/* —— SETTINGS —— */}
         <TabsContent value="settings" className={panelPad}>

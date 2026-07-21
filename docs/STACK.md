@@ -36,14 +36,14 @@ packages/api-client/
 packages/browser-ui/          # design tokens + our components (Preact + Tailwind + Radix)
 ```
 
-## Design system (in progress)
+## Design system
 
 - Tokens: `packages/browser-ui/src/styles.css` (light / dark / system via `data-theme`)
 - Typography: **Tachyon Mono** (bundled JetBrains Mono woff2, same as shell webviews/sidebar); reading role = system sans. Fonts under `packages/browser-ui/fonts/tachyon/`.
 - Components: own Preact wrappers over Radix + Tailwind utility classes
-- Side panel prototype: tabs Live · Tab · Approvals · Audit · Settings (live pair/prompt + vision UI)
+- Side panel product tabs: Live · Agents · Tab · Approvals · Audit · Settings
 
 ## Next
 
-1. Harden browser-ui API from prototype dogfood
-2. Product slices (tab control, approvals live) on top of the DS
+1. Wire local Audit activity trail (pair / prompt / tab.command)
+2. Keep browser-ui API tight as product surfaces land
