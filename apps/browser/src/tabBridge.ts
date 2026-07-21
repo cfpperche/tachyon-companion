@@ -26,7 +26,7 @@ export type RunTabActionResponse =
   | (PageActResult & { url?: string })
   | {
       ok: false;
-      code: "no_tab" | "restricted" | "inject_failed" | "unknown";
+      code: "no_tab" | "restricted" | "inject_failed" | "unknown" | "not_applied" | "not_found" | "denied";
       message: string;
       url?: string;
     };

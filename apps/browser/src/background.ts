@@ -376,6 +376,8 @@ async function fulfillTabCommand(client: CompanionClient, command: CompanionTabC
           selector: act.selector,
           url: act.url,
           detail: act.detail,
+          verified: act.verified,
+          visibleText: act.visibleText,
         }
       : {
           ok: false,
@@ -386,6 +388,7 @@ async function fulfillTabCommand(client: CompanionClient, command: CompanionTabC
             act.code === "inject_failed" ||
             act.code === "not_found" ||
             act.code === "denied" ||
+            act.code === "not_applied" ||
             act.code === "unknown"
               ? act.code
               : "unknown",

@@ -201,6 +201,8 @@ export type CompanionTabErrorCode =
   | "no_tab"
   | "inject_failed"
   | "not_found"
+  /** type/fill strategies ran but the control did not show the expected text. */
+  | "not_applied"
   | "unknown";
 
 /** Extension → engine tab result (POST /companion/v1/tab/result). */
@@ -234,6 +236,9 @@ export type CompanionTabResult =
       selector: string;
       url?: string;
       detail?: string;
+      /** Present when the extension verified visible text after type/fill. */
+      verified?: boolean;
+      visibleText?: string;
     }
   | {
       ok: true;
