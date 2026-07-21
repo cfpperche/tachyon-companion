@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import {
-  AgentRow,
   Badge,
   Button,
   Card,
@@ -537,7 +536,7 @@ export function App() {
           ) : (
             <Card
               title="Message agent"
-              hint="Running agents only. Working → queued until idle. List updates live."
+              hint="Running agents only. Working → queued until idle. Pick an agent in the dropdown."
               footer={
                 <Button className="w-full" disabled={busy} onClick={() => void onSend()}>
                   Send
@@ -552,18 +551,6 @@ export function App() {
                   placeholder="Select agent"
                 />
               </Field>
-              <div className="mb-2.5 flex flex-col gap-1.5">
-                {displayAgents.map((a) => (
-                  <AgentRow
-                    key={a.name}
-                    name={a.name}
-                    attention={a.attention}
-                    composerOccupied={a.composerOccupied}
-                    selected={selectedAgent === a.name}
-                    onSelect={() => setSelectedAgent(a.name)}
-                  />
-                ))}
-              </div>
               <Field label="Message">
                 <Textarea
                   value={message}
