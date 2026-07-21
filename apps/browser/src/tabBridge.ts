@@ -46,6 +46,14 @@ async function activeTab(): Promise<chrome.tabs.Tab | undefined> {
   return cur[0];
 }
 
+async function tabByChromeId(chromeTabId: number): Promise<chrome.tabs.Tab | undefined> {
+  try {
+    return await chrome.tabs.get(chromeTabId);
+  } catch {
+    return undefined;
+  }
+}
+
 async function ensureContentScript(tabId: number): Promise<{ ok: true } | { ok: false; message: string }> {
   try {
     await chrome.scripting.executeScript({
@@ -65,12 +73,12 @@ async function ensureContentScript(tabId: number): Promise<{ ok: true } | { ok: 
 }
 
 /**
- * Capture a capped DOM outline of the user's active tab.
+ * Capture a capped DOM outline of a specific Chrome tab (or active if omitted — legacy).
  */
-export async function captureActiveTabSnapshot(): Promise<CaptureTabSnapshotResponse> {
+export async function captureActiveTabSnapshot(chromeTabId?: number): Promise<CaptureTabSnapshotResponse> {
   let tab: chrome.tabs.Tab | undefined;
   try {
-    tab = await activeTab();
+    tab = chromeTabId != null ? await tabByChromeId(chromeTabId) : await activeTab();
   } catch (e) {
     return {
       ok: false,
@@ -79,7 +87,11 @@ export async function captureActiveTabSnapshot(): Promise<CaptureTabSnapshotResp
     };
   }
   if (!tab?.id) {
-    return { ok: false, code: "no_tab", message: "No active tab found." };
+    return {
+      ok: false,
+      code: "no_tab",
+      message: chromeTabId != null ? `Tab ${chromeTabId} not found (closed?).` : "No active tab found.",
+    };
   }
   if (isRestrictedUrl(tab.url)) {
     return {
@@ -307,11 +319,14 @@ export async function readActiveTabConsole(limit = 30): Promise<ConsoleResponse>
   }
 }
 
-/** Run click / type / fill on the active tab via content script. */
-export async function runActiveTabAction(action: PageActRequest): Promise<RunTabActionResponse> {
+/** Run click / type / fill on a specific Chrome tab (or active if omitted). */
+export async function runActiveTabAction(
+  action: PageActRequest,
+  chromeTabId?: number,
+): Promise<RunTabActionResponse> {
   let tab: chrome.tabs.Tab | undefined;
   try {
-    tab = await activeTab();
+    tab = chromeTabId != null ? await tabByChromeId(chromeTabId) : await activeTab();
   } catch (e) {
     return {
       ok: false,
@@ -320,7 +335,11 @@ export async function runActiveTabAction(action: PageActRequest): Promise<RunTab
     };
   }
   if (!tab?.id) {
-    return { ok: false, code: "no_tab", message: "No active tab found." };
+    return {
+      ok: false,
+      code: "no_tab",
+      message: chromeTabId != null ? `Tab ${chromeTabId} not found (closed?).` : "No active tab found.",
+    };
   }
   if (isRestrictedUrl(tab.url)) {
     return {

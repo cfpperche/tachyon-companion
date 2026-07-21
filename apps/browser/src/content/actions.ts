@@ -45,6 +45,20 @@ function resolveOne(selector: string): { el?: Element; error?: PageActResult } {
       error: { ok: false, code: "unknown", message: "Invalid or empty selector." },
     };
   }
+  // SDD 420: prefer stable @eN refs stamped by the last snapshot.
+  if (/^@e\d+$/i.test(sel)) {
+    const byRef = document.querySelector(`[data-tc-ref="${sel}"]`);
+    if (!byRef) {
+      return {
+        error: {
+          ok: false,
+          code: "not_found",
+          message: `Stale or unknown ref ${sel}. Take a fresh snapshot on this tab.`,
+        },
+      };
+    }
+    return { el: byRef };
+  }
   let el: Element | null;
   try {
     el = document.querySelector(sel);

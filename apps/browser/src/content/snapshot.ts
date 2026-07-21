@@ -38,16 +38,26 @@ export type DomOutlineNode = {
   children?: DomOutlineNode[];
 };
 
+export type TabRefEntry = {
+  ref: string;
+  selector?: string;
+  tag?: string;
+  role?: string;
+  name?: string;
+};
+
 export type TabSnapshotOk = {
   ok: true;
   url: string;
   title: string;
   capturedAt: string;
   selection?: string;
-  /** Human/agent-readable indented outline. */
+  /** Human/agent-readable indented outline (includes @e refs). */
   outline: string;
   /** Structured tree (capped). */
   tree: DomOutlineNode;
+  /** Stable element refs for this document generation (SDD 420). */
+  refs: TabRefEntry[];
   stats: { nodes: number; truncated: boolean; outlineChars: number };
 };
 
@@ -179,14 +189,79 @@ function formatOutline(node: DomOutlineNode, indent = 0): string {
   return line;
 }
 
+function cssPath(el: Element): string {
+  if (el.id) return `#${CSS.escape(el.id)}`;
+  const parts: string[] = [];
+  let cur: Element | null = el;
+  while (cur && cur.nodeType === 1 && parts.length < 6) {
+    let part = cur.tagName.toLowerCase();
+    const parent: Element | null = cur.parentElement;
+    if (parent) {
+      const siblings = Array.from(parent.children).filter((c) => c.tagName === cur!.tagName);
+      if (siblings.length > 1) {
+        const idx = siblings.indexOf(cur) + 1;
+        part += `:nth-of-type(${idx})`;
+      }
+    }
+    parts.unshift(part);
+    cur = parent;
+    if (cur?.tagName === "BODY" || cur?.tagName === "HTML") break;
+  }
+  return parts.join(" > ");
+}
+
+/** Interactive leaves get stable @eN refs for this snapshot generation. */
+function collectRefs(root: Element): TabRefEntry[] {
+  const refs: TabRefEntry[] = [];
+  const nodes = root.querySelectorAll(
+    "a,button,input,textarea,select,[role=button],[role=link],[role=textbox],[contenteditable=true],[data-testid]",
+  );
+  let n = 0;
+  // Clear prior generation markers
+  for (const el of Array.from(root.querySelectorAll("[data-tc-ref]"))) {
+    el.removeAttribute("data-tc-ref");
+  }
+  for (const el of Array.from(nodes)) {
+    if (n >= 200) break;
+    if (el instanceof HTMLInputElement && el.type === "password") continue;
+    n += 1;
+    const ref = `@e${n}`;
+    el.setAttribute("data-tc-ref", ref);
+    const entry: TabRefEntry = { ref, tag: el.tagName.toLowerCase(), selector: cssPath(el) };
+    const role = el.getAttribute("role");
+    if (role) entry.role = clip(role, 32);
+    const name =
+      el.getAttribute("aria-label") ||
+      el.getAttribute("name") ||
+      el.getAttribute("data-testid") ||
+      (el instanceof HTMLElement ? el.innerText?.slice(0, 40) : undefined);
+    if (name) entry.name = clip(name, 80);
+    refs.push(entry);
+  }
+  return refs;
+}
+
+function formatOutlineWithRefs(node: DomOutlineNode, indent = 0, refBySelector?: Map<string, string>): string {
+  // Keep simple formatOutline for tree; refs are listed separately + in outline header.
+  return formatOutline(node, indent);
+}
+
 function buildSnapshot(): TabSnapshotResult {
   try {
     if (!document?.documentElement) {
       return { ok: false, code: "no_document", message: "No document available." };
     }
+    const refs = collectRefs(document.documentElement);
     const state: WalkState = { nodes: 0, truncated: false };
     const root = walk(document.documentElement, 0, state) ?? { tag: "html" };
-    let outline = formatOutline(root);
+    let outline = formatOutlineWithRefs(root);
+    if (refs.length) {
+      const refLines = refs
+        .slice(0, 80)
+        .map((r) => `${r.ref} ${r.tag ?? ""}${r.name ? ` "${r.name}"` : ""}${r.selector ? ` ${r.selector}` : ""}`)
+        .join("\n");
+      outline = `## refs\n${refLines}\n## tree\n${outline}`;
+    }
     if (outline.length > MAX_OUTLINE_CHARS) {
       outline = outline.slice(0, MAX_OUTLINE_CHARS - 1) + "…";
       state.truncated = true;
@@ -200,6 +275,7 @@ function buildSnapshot(): TabSnapshotResult {
       selection: selection && selection.trim() ? clip(selection, 2000) : undefined,
       outline,
       tree: root,
+      refs,
       stats: {
         nodes: state.nodes,
         truncated: state.truncated,

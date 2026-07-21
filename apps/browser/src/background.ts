@@ -262,8 +262,21 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-/** Handle engine tab.command — trust-gated read/act (t-2a7010 + t-fbe280). */
+/** Handle engine tab.command — trust-gated, tabId-scoped (SDD 420). */
 async function fulfillTabCommand(client: CompanionClient, command: CompanionTabCommand): Promise<void> {
+  const { listHandles, resolveHandle } = await import("./tabHandles.js");
+
+  if (command.kind === "tabs_list") {
+    const tabs = await listHandles();
+    await client.postTabResult({
+      ok: true,
+      id: command.id,
+      kind: "tabs_list",
+      tabs,
+    });
+    return;
+  }
+
   const trust = await readTrust();
   if (trust.agentTabRead !== "on") {
     await client.postTabResult({
@@ -272,22 +285,50 @@ async function fulfillTabCommand(client: CompanionClient, command: CompanionTabC
       code: "denied",
       message:
         "Agent tab access is off. Enable “Allow agent tab reads” in Companion Settings (host access for http/https).",
+      tabId: "tabId" in command ? command.tabId : undefined,
     });
     return;
   }
 
+  const target = resolveHandle(command.tabId, command.expectedDocumentToken);
+  if (!target.ok) {
+    await client.postTabResult({
+      ok: false,
+      id: command.id,
+      code: target.code,
+      message: target.message,
+      tabId: command.tabId,
+    });
+    return;
+  }
+  const chromeTabId = target.handle.chromeTabId;
+  const tabId = target.handle.tabId;
+  const documentToken = target.handle.documentToken;
+
   if (command.kind === "snapshot") {
-    const snap = await captureActiveTabSnapshot();
+    const snap = await captureActiveTabSnapshot(chromeTabId);
+    const { ensureHandle } = await import("./tabHandles.js");
+    let docTok = documentToken;
+    try {
+      const t = await chrome.tabs.get(chromeTabId);
+      const h = ensureHandle(t);
+      if (h) docTok = h.documentToken;
+    } catch {
+      /* ignore */
+    }
     const body: CompanionTabResult = snap.ok
       ? {
           ok: true,
           id: command.id,
           kind: "snapshot",
+          tabId,
+          documentToken: docTok,
           url: snap.url,
           title: snap.title,
           capturedAt: snap.capturedAt,
           selection: snap.selection,
           outline: snap.outline,
+          refs: snap.refs,
           stats: snap.stats,
         }
       : {
@@ -301,6 +342,7 @@ async function fulfillTabCommand(client: CompanionClient, command: CompanionTabC
               ? snap.code
               : "unknown",
           message: snap.message,
+          tabId,
           url: snap.url,
         };
     await client.postTabResult(body);
@@ -312,11 +354,14 @@ async function fulfillTabCommand(client: CompanionClient, command: CompanionTabC
       format: command.format,
       quality: command.quality,
     });
+    // captureVisibleTab is window-scoped; still bind metadata to target tab
     const body: CompanionTabResult = shot.ok
       ? {
           ok: true,
           id: command.id,
           kind: "screenshot",
+          tabId,
+          documentToken,
           url: shot.url,
           title: shot.title,
           capturedAt: shot.capturedAt,
@@ -335,6 +380,7 @@ async function fulfillTabCommand(client: CompanionClient, command: CompanionTabC
               ? shot.code
               : "unknown",
           message: shot.message,
+          tabId,
           url: shot.url,
         };
     await client.postTabResult(body);
@@ -348,6 +394,8 @@ async function fulfillTabCommand(client: CompanionClient, command: CompanionTabC
           ok: true,
           id: command.id,
           kind: "eval",
+          tabId,
+          documentToken,
           expression: ev.expression,
           result: ev.result,
           url: ev.url,
@@ -363,6 +411,7 @@ async function fulfillTabCommand(client: CompanionClient, command: CompanionTabC
               ? ev.code
               : "unknown",
           message: ev.message,
+          tabId,
           url: ev.url,
         };
     await client.postTabResult(body);
@@ -376,6 +425,8 @@ async function fulfillTabCommand(client: CompanionClient, command: CompanionTabC
           ok: true,
           id: command.id,
           kind: "console",
+          tabId,
+          documentToken,
           url: con.url,
           entries: con.entries,
         }
@@ -390,6 +441,7 @@ async function fulfillTabCommand(client: CompanionClient, command: CompanionTabC
               ? con.code
               : "unknown",
           message: con.message,
+          tabId,
           url: con.url,
         };
     await client.postTabResult(body);
@@ -397,26 +449,42 @@ async function fulfillTabCommand(client: CompanionClient, command: CompanionTabC
   }
 
   if (command.kind === "click" || command.kind === "type" || command.kind === "fill") {
+    const targetSel = (command.ref?.trim() || command.selector?.trim() || "").trim();
+    if (!targetSel) {
+      await client.postTabResult({
+        ok: false,
+        id: command.id,
+        code: "not_found",
+        message: "Provide ref (preferred) or selector.",
+        tabId,
+      });
+      return;
+    }
     const action =
       command.kind === "click"
-        ? { kind: "click" as const, selector: command.selector }
+        ? { kind: "click" as const, selector: targetSel }
         : command.kind === "type"
           ? {
               kind: "type" as const,
-              selector: command.selector,
+              selector: targetSel,
               text: command.text,
               submit: command.submit,
             }
-          : { kind: "fill" as const, selector: command.selector, value: command.value };
+          : { kind: "fill" as const, selector: targetSel, value: command.value };
 
-    const act = await runActiveTabAction(action);
+    const act = await runActiveTabAction(action, chromeTabId);
     const body: CompanionTabResult = act.ok
       ? {
           ok: true,
           id: command.id,
           kind: act.kind,
+          tabId,
+          documentToken,
+          ref: command.ref,
           selector: act.selector,
           url: act.url,
+          urlBefore: act.url,
+          urlAfter: act.url,
           detail: act.detail,
           verified: act.verified,
           visibleText: act.visibleText,
@@ -435,6 +503,7 @@ async function fulfillTabCommand(client: CompanionClient, command: CompanionTabC
               ? act.code
               : "unknown",
           message: act.message,
+          tabId,
           url: "url" in act ? act.url : undefined,
         };
     await client.postTabResult(body);
@@ -623,6 +692,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (state.baseUrl && state.sessionToken) {
         await clientFrom(state).unpair();
       }
+      const { clearAllHandles } = await import("./tabHandles.js");
+      clearAllHandles();
       await writeState(defaultState());
       await writeLive(defaultLive());
       sendResponse({ ok: true });

@@ -6,7 +6,7 @@
  */
 
 /** Current client-supported protocol major. Engine must advertise a compatible version. */
-export const COMPANION_PROTOCOL_VERSION = 1 as const;
+export const COMPANION_PROTOCOL_VERSION = 2 as const;
 
 export type ProtocolVersion = typeof COMPANION_PROTOCOL_VERSION;
 
@@ -183,15 +183,54 @@ export interface CompanionLiveState {
   agents: CompanionAgentRow[];
 }
 
-/** Engine → extension tab command (SSE event tab.command). */
+/** Opaque companion tab handle (never raw Chrome tab id on the agent wire). */
+export type CompanionTabId = string;
+
+/** Target fields shared by tab-scoped commands (SDD 420). */
+export interface CompanionTabTarget {
+  /** Opaque handle from tabs_list / snapshot. */
+  tabId: string;
+  /** Optional document generation token; mismatch → stale_tab. */
+  expectedDocumentToken?: string;
+}
+
+/** Engine → extension: read, act, or first-person capture (tab-scoped). */
 export type CompanionTabCommand =
-  | { id: string; kind: "snapshot"; at: string; seq?: number }
-  | { id: string; kind: "screenshot"; at: string; format?: "jpeg" | "png"; quality?: number; seq?: number }
-  | { id: string; kind: "click"; at: string; selector: string; seq?: number }
-  | { id: string; kind: "type"; at: string; selector: string; text: string; submit?: boolean; seq?: number }
-  | { id: string; kind: "fill"; at: string; selector: string; value: string; seq?: number }
-  | { id: string; kind: "eval"; at: string; expression: string; seq?: number }
-  | { id: string; kind: "console"; at: string; limit?: number; seq?: number };
+  | { id: string; kind: "tabs_list"; at: string }
+  | ({ id: string; kind: "snapshot"; at: string } & CompanionTabTarget)
+  | ({
+      id: string;
+      kind: "screenshot";
+      at: string;
+      format?: "jpeg" | "png";
+      quality?: number;
+    } & CompanionTabTarget)
+  | ({
+      id: string;
+      kind: "click";
+      at: string;
+      ref?: string;
+      selector?: string;
+    } & CompanionTabTarget)
+  | ({
+      id: string;
+      kind: "type";
+      at: string;
+      ref?: string;
+      selector?: string;
+      text: string;
+      submit?: boolean;
+    } & CompanionTabTarget)
+  | ({
+      id: string;
+      kind: "fill";
+      at: string;
+      ref?: string;
+      selector?: string;
+      value: string;
+    } & CompanionTabTarget)
+  | ({ id: string; kind: "eval"; at: string; expression: string } & CompanionTabTarget)
+  | ({ id: string; kind: "console"; at: string; limit?: number } & CompanionTabTarget);
 
 export type CompanionTabErrorCode =
   | "timeout"
@@ -201,27 +240,55 @@ export type CompanionTabErrorCode =
   | "no_tab"
   | "inject_failed"
   | "not_found"
-  /** type/fill strategies ran but the control did not show the expected text. */
   | "not_applied"
+  | "stale_tab"
+  | "stale_ref"
+  | "needs_confirm"
+  | "unknown_outcome"
   | "unknown";
 
-/** Extension → engine tab result (POST /companion/v1/tab/result). */
+export interface CompanionTabRefEntry {
+  ref: string;
+  selector?: string;
+  tag?: string;
+  role?: string;
+  name?: string;
+}
+
+/** Extension → engine: fulfillment of a tab command. */
 export type CompanionTabResult =
   | {
       ok: true;
       id: string;
+      kind: "tabs_list";
+      tabs: Array<{
+        tabId: string;
+        title: string;
+        url: string;
+        active: boolean;
+        documentToken: string;
+      }>;
+    }
+  | {
+      ok: true;
+      id: string;
       kind: "snapshot";
+      tabId: string;
+      documentToken: string;
       url: string;
       title: string;
       capturedAt: string;
       selection?: string;
       outline: string;
+      refs?: CompanionTabRefEntry[];
       stats: { nodes: number; truncated: boolean; outlineChars: number };
     }
   | {
       ok: true;
       id: string;
       kind: "screenshot";
+      tabId: string;
+      documentToken?: string;
       url: string;
       title: string;
       capturedAt: string;
@@ -233,10 +300,14 @@ export type CompanionTabResult =
       ok: true;
       id: string;
       kind: "click" | "type" | "fill";
-      selector: string;
+      tabId: string;
+      documentToken?: string;
+      ref?: string;
+      selector?: string;
       url?: string;
+      urlBefore?: string;
+      urlAfter?: string;
       detail?: string;
-      /** Present when the extension verified visible text after type/fill. */
       verified?: boolean;
       visibleText?: string;
     }
@@ -244,6 +315,8 @@ export type CompanionTabResult =
       ok: true;
       id: string;
       kind: "eval";
+      tabId: string;
+      documentToken?: string;
       expression: string;
       result: string;
       url?: string;
@@ -252,6 +325,8 @@ export type CompanionTabResult =
       ok: true;
       id: string;
       kind: "console";
+      tabId: string;
+      documentToken?: string;
       url?: string;
       entries: Array<{ level: string; text: string; at?: string }>;
     }
@@ -260,7 +335,9 @@ export type CompanionTabResult =
       id: string;
       code: CompanionTabErrorCode;
       message: string;
+      tabId?: string;
       url?: string;
+      documentToken?: string;
     };
 
 /** @deprecated Use CompanionTabResult */
